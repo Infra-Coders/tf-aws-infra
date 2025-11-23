@@ -1,0 +1,86 @@
+#cloud-config
+users:
+  - name: k8sadmin
+    gecos: k8sadmin
+    primary_group: k8sadmin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin, root, wheel
+    ssh_import_id:
+    lock_passwd: false
+    ssh_authorized_keys:
+      - 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDKT+ffnHS42LFtTaRDy6zyOw/39kDj6kRMshdxF/b6xDf0geJWtgkT3ic3d/4dpvyukPwbrtFOWJMB9ItsDxqMpAT27MBSTcG9CzDGy6TDKceL2orWb77+KWN1HlqExXL2cbsC8AlW5Def+HTNVzmGk4LYiTrv8nx/EGdj5TTIvU4uD1f/aAL1tWGPcqvfjkmZuyfpizH28uz+XOS1COMBLWd7hQCNrOSznaCMumkqFj1VxWc3CsqP+Ze3Jtpi+YblrxQiKts9DWEkHF/1Ycba2YWv5kQ8hpnofsd/qsYfA2EzpEWBEgL8OiK4+ld1O2RFvgPElg98KCXHjWWZ9N8P'
+write_files:
+  - path: /root/scripts/check_cloud_init
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+
+      cloud-init status --wait >/dev/null
+      (( $? == 0 || $? == 2 )) && echo "$(uname -n) cloud-init status: DONE" && exit 0
+      exit 1
+  - path: /root/scripts/bootstrap-k8s-node.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+ 
+      sudo apt-get update
+      sudo apt-get upgrade -y
+      sudo apt-get install -y apt-transport-https ca-certificates curl gpg podman
+      export KUBERNETES_VERSION=v1.32
+      export CRIO_VERSION=v1.32
+      curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+      sudo apt-get install -y software-properties-common curl
+      curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/$CRIO_VERSION/deb/Release.key  | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/$CRIO_VERSION/deb/ /" | sudo tee /etc/apt/sources.list.d/cri-o.list
+      sudo apt-get update
+      sudo apt-get install -y kubelet kubeadm kubectl conntrack
+      sudo apt-mark hold kubelet kubeadm kubectl
+      sudo apt-get install -y cri-o
+      sudo systemctl enable kubelet --now
+      sudo systemctl enable crio --now
+      sudo chmod -x /etc/update-motd.d/*
+      # install kube tooling
+      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | sudo bash
+
+  - path: /root/k8s/tigera_installation.yaml
+    permissions: "0644"
+    content: |
+      kind: Installation
+      apiVersion: operator.tigera.io/v1
+      metadata:
+        name: default
+      spec:
+        calicoNetwork:
+          ipPools:
+            - cidr: 10.244.0.0/16
+  - path: /root/scripts/k8s-init.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+
+      public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
+      kubeadm init --control-plane-endpoint=$public_dns:6443 --pod-network-cidr=10.244.0.0/16 --upload-certs | tee /root/k8s-kinit.log
+      export KUBECONFIG=/etc/kubernetes/admin.conf
+  - path: /root/scripts/callico-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+
+      export KUBECONFIG=/etc/kubernetes/admin.conf
+      kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/operator-crds.yaml
+      kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/tigera-operator.yaml
+      # eBPF
+      kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/custom-resources-bpf.yaml
+      kubectl patch installation default --type=merge -p '{"spec": {"calicoNetwork": {"ipPools": [{"cidr": "10.244.0.0/16"}]}}}'
+  - path: /etc/modules-load.d/kubernetes.conf
+    content: |
+      br_netfilter
+      overlay
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+runcmd:
+  - [sh, "/root/scripts/bootstrap-k8s-node.sh"]

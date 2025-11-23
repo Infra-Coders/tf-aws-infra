@@ -1,0 +1,6 @@
+#!/bin/bash
+
+for W in $(./scripts/parse_tf_output ./nodes/workers_private_dns.json | cut -d ":" -f2 | cut -d "." -f1); do
+  kubectl label node ${W} kubernetes.io/role=worker
+done
+

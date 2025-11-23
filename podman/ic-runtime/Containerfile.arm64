@@ -1,0 +1,19 @@
+FROM docker.io/arm64v8/ubuntu:devel
+
+ARG ARCH=arm64
+
+ENV KUBERNETES_VERSION=v1.32
+ENV TFVERSION=1.13.5
+
+RUN apt update && apt install jq curl sudo openssh-client gpg -y
+RUN curl -s -k https://api.github.com/repos/tfversion/tfversion/releases/latest | \
+    jq -r --arg ARCH "${ARCH}" '.assets[] | select(.name? | match("tfversion_.*linux_" + $ARCH)) | .browser_download_url' | xargs curl -s -k -L  | tar -C /usr/local/bin -zx tfversion
+ENV PATH="~/.tfversion/bin:${PATH}"
+RUN tfversion install ${TFVERSION} && tfversion use ${TFVERSION}
+
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | sudo bash
+RUN curl -s https://fluxcd.io/install.sh | sudo bash
+RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+RUN apt update && apt install kubectl
+WORKDIR /podman

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+mkdir -p ./nodes
+terraform output -json | jq '."worker_public_ip".value'  > ./nodes/workers_public_ip.json
+terraform output -json | jq '."worker_private_dns".value' > ./nodes/workers_private_dns.json
