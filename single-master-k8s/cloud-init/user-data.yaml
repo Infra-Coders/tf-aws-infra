@@ -40,6 +40,9 @@ write_files:
       sudo systemctl enable kubelet --now
       sudo systemctl enable crio --now
       sudo chmod -x /etc/update-motd.d/*
+      # install kube tooling
+      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | sudo bash
+
   - path: /root/k8s/tigera_installation.yaml
     permissions: "0644"
     content: |
@@ -59,15 +62,17 @@ write_files:
       public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
       kubeadm init --control-plane-endpoint=$public_dns:6443 --pod-network-cidr=10.244.0.0/16 --upload-certs | tee /root/k8s-kinit.log
       export KUBECONFIG=/etc/kubernetes/admin.conf
-      #kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.0/manifests/tigera-operator.yaml
-      #kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.0/manifests/custom-resources.yaml
+  - path: /root/scripts/callico-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+
+      export KUBECONFIG=/etc/kubernetes/admin.conf
       kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/operator-crds.yaml
       kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/tigera-operator.yaml
-      #cat /root/k8s/tigera_installation.yaml | kubectl create -f -
       # eBPF
       kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/custom-resources-bpf.yaml
       kubectl patch installation default --type=merge -p '{"spec": {"calicoNetwork": {"ipPools": [{"cidr": "10.244.0.0/16"}]}}}'
-
   - path: /etc/modules-load.d/kubernetes.conf
     content: |
       br_netfilter

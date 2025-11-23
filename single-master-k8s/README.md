@@ -147,7 +147,7 @@ Do you want to perform these actions?
 
 > Note: BOOTSTRAP Kube
 ```
-> ./scripts/BOOTSTRAP_KUBE.sh
+> ./scripts/podman_run ./scripts/BOOTSTRAP_KUBE.sh
 --------------------------------------------------------------------------------
 STAGE: NODE_BOOTSTRAP
 NODE_BOOTSTRAP node=3.75.222.143

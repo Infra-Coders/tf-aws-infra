@@ -1,0 +1,3 @@
+#!/bin/bash
+
+podman run -it -v ${PWD}:/podman -e "KUBECONFIG=${KUBECONFIG}" -v ~/.aws:/root/.aws -v ~/.config/helm:/root/.config/helm -v ~/.cache/helm:/root/.cache/helm ic-podman-runtime:latest helm "$@"

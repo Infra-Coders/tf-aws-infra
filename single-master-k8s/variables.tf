@@ -1,5 +1,5 @@
 variable "workers_kind" {
-  default = "workers3"
+  default = "workers1"
 }
 
 variable "masters_kind" {

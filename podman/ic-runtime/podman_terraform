@@ -1,0 +1,3 @@
+#!/bin/bash
+
+podman run -it -v ${PWD}:/podman -v ~/.aws:/root/.aws ic-podman-runtime:latest /root/.tfversion/bin/terraform "$@"
