@@ -31,4 +31,8 @@ locals {
       "worker5"
     ]
   } 
+
+  cloud_init_user_data_base64 = base64encode(
+    file("${path.module}/cloud-init/user-data.yaml"),
+  )
 }

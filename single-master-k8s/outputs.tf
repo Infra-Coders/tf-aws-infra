@@ -41,3 +41,9 @@ output "worker_private_dns" {
     for w in local.workers[var.workers_kind] : w => aws_instance.k8s-worker[w].private_dns
   }
 }
+
+# Prefix with zz_ so it prints at the bottom of terraform output.
+output "zz_next_step_bootstrap" {
+  description = "Reminder to bootstrap the cluster after infrastructure is ready"
+  value       = "Next: run ./scripts/BOOTSTRAP_KUBE.sh from single-master-k8s/"
+}

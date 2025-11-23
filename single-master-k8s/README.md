@@ -56,12 +56,9 @@ ami-02c70beba709cc62b   2024-07-24T13:31:11.000Z
 Initializing the backend...
 
 Initializing provider plugins...
-- Reusing previous version of hashicorp/aws from the dependency lock file
-- Reusing previous version of hashicorp/template from the dependency lock file
-- Installing hashicorp/aws v6.21.0...
-- Installed hashicorp/aws v6.21.0 (signed by HashiCorp)
-- Installing hashicorp/template v2.2.0...
-- Installed hashicorp/template v2.2.0 (signed by HashiCorp)
+- Finding latest version of hashicorp/aws...
+- Installing hashicorp/aws v6.22.1...
+- Installed hashicorp/aws v6.22.1 (signed by HashiCorp)
 
 Terraform has been successfully initialized!
 
@@ -73,6 +70,10 @@ If you ever set or change modules or backend configuration for Terraform,
 rerun this command to reinitialize your working directory. If you forget, other
 commands will detect it and remind you to do so if necessary.
 ```
+
+Template rendering now uses Terraform built-in functions, so there is no separate
+`hashicorp/template` provider to install. This avoids the darwin/arm64 install
+error seen with the legacy provider.
 
 > Note: Terraform PLAN
 ```
