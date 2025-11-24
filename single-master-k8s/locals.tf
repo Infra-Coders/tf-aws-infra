@@ -1,4 +1,5 @@
 locals {
+  cloud_init_user_data = file("${path.module}/cloud-init/user-data.yaml")
 
   instance_type = {
     workers1 = "t2.micro"
