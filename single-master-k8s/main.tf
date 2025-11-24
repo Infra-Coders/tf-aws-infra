@@ -1,18 +1,4 @@
 
-data "template_file" "cloud-init-user-data" {
-  template = file("./cloud-init/user-data.yaml")
-}
-
-data "template_cloudinit_config" "cloud_init_user_data_config" {
-  base64_encode = true
-  # Main cloud-config configuration file.
-  part {
-    filename     = "init.cfg"
-    content_type = "text/cloud-config"
-    content      = data.template_file.cloud-init-user-data.rendered
-  }
-}
-
 resource "aws_key_pair" "ic-k8slab-cluster" {
   key_name   = "ic-k8slab-cluster"
   public_key = file("${path.module}/ssh/ic-k8slab-cluster.pub")
@@ -27,8 +13,7 @@ resource "aws_instance" "k8s-master" {
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
   associate_public_ip_address = true
-  #user_data                   = file("./cloud-init/user-data.yaml")
-  user_data_base64 = data.template_cloudinit_config.cloud_init_user_data_config.rendered
+  user_data_base64            = base64encode(local.cloud_init_user_data)
   key_name         = "ic-k8slab-cluster"
 
   tags = {
@@ -60,8 +45,7 @@ resource "aws_instance" "k8s-worker" {
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
   associate_public_ip_address = true
-  #user_data                   = file("./cloud-init/user-data.yaml")
-  user_data_base64 = data.template_cloudinit_config.cloud_init_user_data_config.rendered
+  user_data_base64            = base64encode(local.cloud_init_user_data)
   key_name         = "ic-k8slab-cluster"
 
   tags = {
