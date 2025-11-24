@@ -1,0 +1,10 @@
+- name: IC Ansible TEST Playbook
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+
+    - name: Debug Test
+      debug:
+        msg: "{{ inventory_hostname }}"
