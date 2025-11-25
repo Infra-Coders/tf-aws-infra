@@ -363,3 +363,6 @@ ip-10-0-1-83     Ready    control-plane   100s   v1.32.10
 ip-10-0-11-214   Ready    worker          87s    v1.32.10
 
 ```
+
+
+example
