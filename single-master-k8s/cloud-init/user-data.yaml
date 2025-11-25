@@ -62,7 +62,7 @@ write_files:
       public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
       kubeadm init --control-plane-endpoint=$public_dns:6443 --pod-network-cidr=10.244.0.0/16 --upload-certs | tee /root/k8s-kinit.log
       export KUBECONFIG=/etc/kubernetes/admin.conf
-  - path: /root/scripts/callico-bootstrap.sh
+  - path: /root/scripts/calico-bootstrap.sh
     permissions: "0755"
     content: |
       #!/bin/bash

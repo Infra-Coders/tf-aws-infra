@@ -11,7 +11,7 @@ STAGE_CMD['NODE_BOOTSTRAP']="sudo /root/scripts/check_cloud_init"
 STAGE_CMD['NODE_REBOOT']="sudo shutdown -r now"
 STAGE_CMD['NODE_READY']="uname -n"
 STAGE_CMD['CONTROL_PLANE_BOOTSTRAP']="sudo sh /root/scripts/k8s-init.sh"
-STAGE_CMD['CNI_BOOTSTRAP']="sudo sh /root/scripts/${CNI_ENGINE:-callico}-bootstrap.sh"
+STAGE_CMD['CNI_BOOTSTRAP']="sudo sh /root/scripts/${CNI_ENGINE:-calico}-bootstrap.sh"
 STAGE_CMD['GET_WORKER_CMD_JOIN']="sudo kubeadm token create --print-join-command"
 STAGE_CMD['GET_KUBECONFIG']="sudo cat /etc/kubernetes/admin.conf"
 
@@ -116,3 +116,9 @@ export KUBECONFIG=./.kube/aws-k8s
 
 echo "Add Workers labels"
 ./scripts/label_all_workers
+
+printf "%0.s*" {1..80}
+echo
+echo "export KUBECONFIG=\${PWD}/.kube/aws-k8s"
+printf "%0.s*" {1..80}
+echo

@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -o nounset -o pipefail -o errexit
+
+set -o allexport
+ansible_ENV=$(dirname "$0")/.ansible/env
+[[ -f ${ansible_ENV} ]] && source "${ansible_ENV}"
+set +o allexport
+
+exec podman run --rm -v ${PWD}:/podman -e 'ANSIBLE_FORCE_COLOR=true' localhost/ic-podman-ansible ansible-playbook "$@"
