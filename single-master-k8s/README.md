@@ -9,8 +9,8 @@
 [create HA k8s](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/)<br>
 [kubelet customization](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/kubelet-integration/)<br>
 #### Tiger Operator, Callico
-[callico install](https://docs.tigera.io/calico/latest/getting-started/kubernetes/k8s-single-node)<br>
-[callico customize](https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/config-options)<br>
+[calico install](https://docs.tigera.io/calico/latest/getting-started/kubernetes/k8s-single-node)<br>
+[calico customize](https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/config-options)<br>
 #### AWS VPC CNI
 [amazon-vpc-cni-k8s](https://github.com/aws/amazon-vpc-cni-k8s)
 #### Flux
@@ -148,80 +148,6 @@ Do you want to perform these actions?
 > Note: BOOTSTRAP Kube
 ```
 > ./scripts/podman_run ./scripts/BOOTSTRAP_KUBE.sh
---------------------------------------------------------------------------------
-STAGE: NODE_BOOTSTRAP
-NODE_BOOTSTRAP node=3.75.222.143
-NODE_BOOTSTRAP node=18.193.71.203
-NODE_BOOTSTRAP node=18.199.85.73
-NODE_BOOTSTRAP node=3.67.133.90
-Warning: Permanently added '3.75.222.143' (ED25519) to the list of known hosts.
-ip-10-0-1-29 cloud-init status: DONE
-ip-10-0-12-39 cloud-init status: DONE
-ip-10-0-4-230 cloud-init status: DONE
-ip-10-0-13-139 cloud-init status: DONE
-STAGE: NODE_BOOTSTRAP success!
---------------------------------------------------------------------------------
-STAGE: NODE_REBOOT
-NODE_REBOOT node=3.75.222.143
-NODE_REBOOT node=18.193.71.203
-NODE_REBOOT node=18.199.85.73
-NODE_REBOOT node=3.67.133.90
-STAGE: NODE_REBOOT success!
---------------------------------------------------------------------------------
-STAGE: NODE_READY
-NODE_READY node=3.75.222.143
-NODE_READY node=18.193.71.203
-NODE_READY node=18.199.85.73
-NODE_READY node=3.67.133.90
-ip-10-0-1-29
-ip-10-0-4-230
-ip-10-0-13-139
-ip-10-0-12-39
-STAGE: NODE_READY success!
---------------------------------------------------------------------------------
-STAGE: CONTROL_PLANE_BOOTSTRAP
-CONTROL_PLANE_BOOTSTRAP node=3.75.222.143
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100    51  100    51    0     0  17671      0 --:--:-- --:--:-- --:--:-- 25500
-I1122 15:36:58.024944    1041 version.go:261] remote version is much newer: v1.34.2; falling back to: stable-1.32
-[init] Using Kubernetes version: v1.32.10
-[preflight] Running pre-flight checks
-[preflight] Pulling images required for setting up a Kubernetes cluster
-[preflight] This might take a minute or two, depending on the speed of your internet connection
-[preflight] You can also perform this action beforehand using 'kubeadm config images pull'
-[certs] Using certificateDir folder "/etc/kubernetes/pki"
-[certs] Generating "ca" certificate and key
-[certs] Generating "apiserver" certificate and key
-[certs] apiserver serving cert is signed for DNS names [ec2-3-75-222-143.eu-central-1.compute.amazonaws.com ip-10-0-4-230 kubernetes kubernetes.default kubernetes.default.svc kubernetes.default.svc.cluster.local] and IPs [10.96.0.1 10.0.4.230]
-[certs] Generating "apiserver-kubelet-client" certificate and key
-[certs] Generating "front-proxy-ca" certificate and key
-[certs] Generating "front-proxy-client" certificate and key
-[certs] Generating "etcd/ca" certificate and key
-[certs] Generating "etcd/server" certificate and key
-[certs] etcd/server serving cert is signed for DNS names [ip-10-0-4-230 localhost] and IPs [10.0.4.230 127.0.0.1 ::1]
-[certs] Generating "etcd/peer" certificate and key
-[certs] etcd/peer serving cert is signed for DNS names [ip-10-0-4-230 localhost] and IPs [10.0.4.230 127.0.0.1 ::1]
-[certs] Generating "etcd/healthcheck-client" certificate and key
-[certs] Generating "apiserver-etcd-client" certificate and key
-[certs] Generating "sa" key and public key
-[kubeconfig] Using kubeconfig folder "/etc/kubernetes"
-[kubeconfig] Writing "admin.conf" kubeconfig file
-[kubeconfig] Writing "super-admin.conf" kubeconfig file
-[kubeconfig] Writing "kubelet.conf" kubeconfig file
-[kubeconfig] Writing "controller-manager.conf" kubeconfig file
-[kubeconfig] Writing "scheduler.conf" kubeconfig file
-[etcd] Creating static Pod manifest for local etcd in "/etc/kubernetes/manifests"
-[control-plane] Using manifest folder "/etc/kubernetes/manifests"
-[control-plane] Creating static Pod manifest for "kube-apiserver"
-[control-plane] Creating static Pod manifest for "kube-controller-manager"
-[control-plane] Creating static Pod manifest for "kube-scheduler"
-[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
-[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
-[kubelet-start] Starting the kubelet
-
-[...]
-
 --------------------------------------------------------------------------------
 STAGE: NODE_BOOTSTRAP
 NODE_BOOTSTRAP node=3.75.222.143
