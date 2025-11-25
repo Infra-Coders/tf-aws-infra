@@ -4,3 +4,5 @@
 */.terraform.tfstate*
 */nodes
 */.kube
+*/ssh/*.pem
+*/ssh/*.pub
