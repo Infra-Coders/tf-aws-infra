@@ -8,8 +8,8 @@ ENV TFVERSION=1.13.5
 RUN apt update && apt install jq curl sudo openssh-client gpg -y
 RUN curl -s -k https://api.github.com/repos/tfversion/tfversion/releases/latest | \
     jq -r --arg ARCH "${ARCH}" '.assets[] | select(.name? | match("tfversion_.*linux_" + $ARCH)) | .browser_download_url' | xargs curl -s -k -L  | tar -C /usr/local/bin -zx tfversion
-ENV PATH="~/.tfversion/bin:${PATH}"
 RUN tfversion install ${TFVERSION} && tfversion use ${TFVERSION}
+ENV PATH="/root/.tfversion/bin:${PATH}"
 
 RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | sudo bash
 RUN curl -s https://fluxcd.io/install.sh | sudo bash
