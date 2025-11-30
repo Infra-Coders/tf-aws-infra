@@ -143,7 +143,15 @@ Do you want to perform these actions?
 
   Enter a value: yes
 ```
-### BOOTSTRAP KUBE
+
+### BOOTSTRAP KUBE with Ansible
+
+> Note: BOOTSTRAP Kube
+```
+> ./scripts/ansible_bootstrap.sh basic
+```
+
+### BOOTSTRAP KUBE with shell script
 
 > Note: BOOTSTRAP Kube
 ```

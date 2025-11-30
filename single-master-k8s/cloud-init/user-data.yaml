@@ -5,7 +5,6 @@ users:
     primary_group: k8sadmin
     sudo: ALL=(ALL) NOPASSWD:ALL
     groups: users, admin, root, wheel
-    ssh_import_id:
     lock_passwd: false
     ssh_authorized_keys:
       - '${k8sadmin_ssh_key}'
