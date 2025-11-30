@@ -2,6 +2,7 @@
 */.terraform.lock.hcl
 */terraform.tfstate*
 */.terraform.tfstate*
+*.tfvars
 */nodes
 */.kube
 */ssh/*.pem
