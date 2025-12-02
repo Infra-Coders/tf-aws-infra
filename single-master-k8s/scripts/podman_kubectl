@@ -1,3 +1,0 @@
-#!/bin/bash
-
-podman run --rm -it -v ${PWD}:/podman -e "KUBECONFIG=${KUBECONFIG}" -v ~/.aws:/root/.aws -v ~/.kube:/root/.kube ic-podman-runtime:latest kubectl "$@"

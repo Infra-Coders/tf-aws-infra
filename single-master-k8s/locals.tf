@@ -2,16 +2,15 @@ locals {
   cloud_init_user_data = templatefile(
     "${path.module}/cloud-init/user-data.yaml",
     {
-      k8sadmin_ssh_key = trimspace(tls_private_key.ic-k8slab-cluster.public_key_openssh)
+      k8sadmin_ssh_key = trimspace(aws_key_pair.ic-k8slab.public_key)
     }
   )
   cloud_init_user_data_base64 = base64encode(local.cloud_init_user_data)
-  ssh_key_name                = "ic-k8slab-cluster-${substr(sha1(tls_private_key.ic-k8slab-cluster.public_key_openssh), 0, 8)}"
 
   instance_type = {
-    workers1 = "t2.small"
-    workers3 = "t2.small"
-    workers5 = "t2.small"
+    workers1 = "t2.medium"
+    workers3 = "t2.medium"
+    workers5 = "t2.micro"
     masters1 = "t2.medium"
   }
 

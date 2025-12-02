@@ -1,43 +1,57 @@
 
-resource "tls_private_key" "ic-k8slab-cluster" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
+resource "aws_key_pair" "ic-k8slab" {
+  key_name   = "ic-k8slab"
+  public_key = file("${path.module}/ssh/ic-k8slab.pub")
 }
 
-resource "aws_key_pair" "ic-k8slab-cluster" {
-  key_name   = local.ssh_key_name
-  public_key = tls_private_key.ic-k8slab-cluster.public_key_openssh
-
-  lifecycle {
-    create_before_destroy = true
-  }
+resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
+  http_tokens                 = "required"
+  http_put_response_hop_limit = 3
 }
 
-resource "local_sensitive_file" "ssh_private_key" {
-  filename             = "${path.module}/ssh/ic-k8slab-cluster.pem"
-  content              = tls_private_key.ic-k8slab-cluster.private_key_pem
-  file_permission      = "0600"
-  directory_permission = "0700"
+resource "aws_iam_role" "ic-aws-ebs-csi-role-ec2" {
+  name = "ic-aws-ebs-csi-role-ec2"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
 }
 
-resource "local_file" "ssh_public_key" {
-  filename             = "${path.module}/ssh/ic-k8slab-cluster.pub"
-  content              = trimspace(tls_private_key.ic-k8slab-cluster.public_key_openssh)
-  file_permission      = "0644"
-  directory_permission = "0700"
+resource "aws_iam_role_policy_attachment" "ic-aws-ebs-csi-role-ec2" {
+  role       = aws_iam_role.ic-aws-ebs-csi-role-ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_iam_instance_profile" "ic-aws-ebs-csi-ec2" {
+  name = "ic-aws-ebs-csi-ec2"
+  role = aws_iam_role.ic-aws-ebs-csi-role-ec2.name
 }
 
 resource "aws_instance" "k8s-master" {
   ami      = data.aws_ami.ubuntu.id
   for_each = toset(local.masters[var.masters_kind])
 
+  # bind role
+  iam_instance_profile = aws_iam_instance_profile.ic-aws-ebs-csi-ec2.name
   instance_type = local.instance_type[var.masters_kind]
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
   associate_public_ip_address = true
   user_data_base64            = local.cloud_init_user_data_base64
-  key_name                    = aws_key_pair.ic-k8slab-cluster.key_name
+  key_name                    = aws_key_pair.ic-k8slab.key_name
 
   tags = {
     Name = each.value
@@ -64,12 +78,14 @@ resource "aws_instance" "k8s-worker" {
   ami = data.aws_ami.ubuntu.id
 
   for_each = toset(local.workers[var.workers_kind])
+  # bind role
+  iam_instance_profile = aws_iam_instance_profile.ic-aws-ebs-csi-ec2.name
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
   associate_public_ip_address = true
   user_data_base64            = local.cloud_init_user_data_base64
-  key_name                    = aws_key_pair.ic-k8slab-cluster.key_name
+  key_name                    = aws_key_pair.ic-k8slab.key_name
 
   tags = {
     Name = each.value

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+host=$1
+shift
+
+ic_ssh_wrapper -T -o StrictHostKeyChecking=no k8sadmin@${host} "$@"

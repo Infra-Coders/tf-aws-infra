@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ic_ssh_wrapper -T -o StrictHostKeyChecking=no "$@"

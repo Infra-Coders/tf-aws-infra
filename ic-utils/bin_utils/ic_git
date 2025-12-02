@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -e
+
+GIT_SSH=~/bin/ic_ssh_wrapper git "$@"
