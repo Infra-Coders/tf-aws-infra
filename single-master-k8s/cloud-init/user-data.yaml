@@ -59,9 +59,61 @@ write_files:
     content: |
       #!/bin/bash
 
-      public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
-      kubeadm init --control-plane-endpoint=$public_dns:6443 --pod-network-cidr=10.244.0.0/16 --upload-certs | tee /root/k8s-kinit.log
+      export public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
+      envsubst < /root/scripts/kubeadm-custom.tmpl > /root/scripts/kubeadm-custom.yaml
+      kubeadm init --config /root/scripts/kubeadm-custom.yaml --upload-certs | tee /root/k8s-kinit.log
       export KUBECONFIG=/etc/kubernetes/admin.conf
+  - path: /root/scripts/kubeadm-custom.tmpl
+    permissions: "0644"
+    content: |
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: InitConfiguration
+      localAPIEndpoint:
+        bindPort: 6443
+      nodeRegistration:
+        criSocket: unix:///var/run/crio/crio.sock
+        imagePullPolicy: IfNotPresent
+        imagePullSerial: true
+        kubeletExtraArgs:
+        - name: cloud-provider
+          value: external
+      timeouts:
+        controlPlaneComponentHealthCheck: 4m0s
+        discovery: 5m0s
+        etcdAPICall: 2m0s
+        kubeletHealthCheck: 4m0s
+        kubernetesAPICall: 1m0s
+        tlsBootstrap: 5m0s
+        upgradeManifests: 5m0s
+      ---
+      apiServer:
+        extraArgs:
+        - name: cloud-provider
+          value: external
+      apiVersion: kubeadm.k8s.io/v1beta4
+      certificatesDir: /etc/kubernetes/pki
+      clusterName: ic-k8slab
+      controlPlaneEndpoint: $public_dns:6443
+      controllerManager:
+        extraArgs:
+        - name: cloud-provider
+          value: external
+        - name: node-cidr-mask-size
+          value: "20"
+      dns: {}
+      encryptionAlgorithm: RSA-2048
+      etcd:
+        local:
+          dataDir: /var/lib/etcd
+      imageRepository: registry.k8s.io
+      kind: ClusterConfiguration
+      kubernetesVersion: v1.32.10
+      networking:
+        dnsDomain: cluster.local
+        podSubnet: 10.244.0.0/16
+        serviceSubnet: 10.96.0.0/16
+      proxy: {}
+      scheduler: {}
   - path: /root/scripts/calico-bootstrap.sh
     permissions: "0755"
     content: |

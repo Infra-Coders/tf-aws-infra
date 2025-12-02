@@ -27,6 +27,11 @@ resource "local_file" "ssh_public_key" {
   directory_permission = "0700"
 }
 
+resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
+  http_tokens                 = "required"
+  http_put_response_hop_limit = 3
+}
+
 resource "aws_instance" "k8s-master" {
   ami      = data.aws_ami.ubuntu.id
   for_each = toset(local.masters[var.masters_kind])
