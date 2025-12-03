@@ -24,9 +24,6 @@ spec:
     multitenant: false
     networkPolicy: true
     domain: "cluster.local"
-  storage:
-    class: "standard"
-    size: "10Gi"
   commonMetadata:
     labels:
       app.kubernetes.io/name: flux

@@ -9,9 +9,9 @@ locals {
   ssh_key_name                = "ic-k8slab-cluster-${substr(sha1(tls_private_key.ic-k8slab-cluster.public_key_openssh), 0, 8)}"
 
   instance_type = {
-    workers1 = "t2.micro"
-    workers3 = "t2.micro"
-    workers5 = "t2.micro"
+    workers1 = "t2.small"
+    workers3 = "t2.small"
+    workers5 = "t2.small"
     masters1 = "t2.medium"
   }
 
