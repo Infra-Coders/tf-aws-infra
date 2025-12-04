@@ -1,0 +1,441 @@
+---
+- name: PREPARATION | Parse Terraform outputs and create dynamic inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    workdir: "/podman/single-master-k8s"
+    ssh_key_file: "{{ workdir }}/ssh/ic-k8slab-cluster.pem"
+    ssh_user: "k8sadmin"
+    masters_ip_file: "{{ workdir }}/nodes/masters_public_ip.json"
+    workers_ip_file: "{{ workdir }}/nodes/workers_public_ip.json"
+    workers_dns_file: "{{ workdir }}/nodes/workers_private_dns.json"
+    ansible_host_key_checking: false
+    ansible_ssh_common_args: "-o ConnectionAttempts=10"
+
+  tasks:
+    - name: PREPARATION | Generate Terraform outputs
+      tags: [ always ]
+      block:
+        - name: PREPARATION | Run tf_masters script
+          ansible.builtin.shell: |
+            cd "{{ workdir }}"
+            bash {{ workdir }}/scripts/tf_masters
+          changed_when: false
+
+        - name: PREPARATION | Run tf_workers script
+          ansible.builtin.shell: |
+            cd {{ workdir }}
+            bash {{ workdir }}/scripts/tf_workers
+          changed_when: false
+
+    - name: PREPARATION | Parse node IPs from Terraform outputs
+      tags: [ always ]
+      block:
+        - name: PREPARATION | Verify masters IP file exists
+          ansible.builtin.stat:
+            path: "{{ masters_ip_file }}"
+          register: masters_file_stat
+
+        - name: PREPARATION | Verify workers IP file exists
+          ansible.builtin.stat:
+            path: "{{ workers_ip_file }}"
+          register: workers_file_stat
+
+        - name: PREPARATION | Verify workers DNS file exists
+          ansible.builtin.stat:
+            path: "{{ workers_dns_file }}"
+          register: workers_dns_file_stat
+
+        - name: PREPARATION | Parse masters IP file
+          ansible.builtin.set_fact:
+            masters_json: "{{ lookup('file', masters_ip_file) | from_json }}"
+          when: masters_file_stat.stat.exists
+
+        - name: PREPARATION | Extract master IP from JSON
+          ansible.builtin.set_fact:
+            master_ip: "{{ masters_json.values() | list | first }}"
+          when: masters_file_stat.stat.exists
+
+        - name: PREPARATION | Show master IP
+          ansible.builtin.debug:
+            msg: "Extracted master IP: {{ master_ip }}"
+          when: masters_file_stat.stat.exists
+
+        - name: PREPARATION | Parse workers IP file
+          ansible.builtin.set_fact:
+            workers_json: "{{ lookup('file', workers_ip_file) | from_json }}"
+          when: workers_file_stat.stat.exists
+
+        - name: PREPARATION | Extract worker IPs from JSON
+          ansible.builtin.set_fact:
+            worker_ips: "{{ workers_json.values() | list }}"
+          when: workers_file_stat.stat.exists
+
+        - name: PREPARATION | Show extracted worker IPs
+          ansible.builtin.debug:
+            msg: "Extracted worker IPs: {{ worker_ips }}"
+          when: workers_file_stat.stat.exists
+
+        - name: PREPARATION | Parse workers DNS file
+          ansible.builtin.set_fact:
+            workers_dns_json: "{{ lookup('file', workers_dns_file) | from_json }}"
+          when: workers_dns_file_stat.stat.exists
+
+        - name: PREPARATION | Extract worker hostnames from JSON
+          ansible.builtin.set_fact:
+            worker_hostnames: "{{ workers_dns_json.values() | list | map('regex_replace', '\\..*', '') | list }}"
+          when: workers_dns_file_stat.stat.exists
+
+        - name: PREPARATION | Show extracted worker hostnames
+          ansible.builtin.debug:
+            msg: "Extracted worker hostnames: {{ worker_hostnames }}"
+          when: workers_dns_file_stat.stat.exists
+
+        - name: PREPARATION | Display parsed nodes
+          ansible.builtin.debug:
+            msg: |
+              Master: {{ master_ip | default('NOT SET') }}
+              Workers: {{ worker_ips | default([]) | join(', ') }}
+              Worker Hostnames: {{ worker_hostnames | default([]) | join(', ') }}
+
+        - name: PREPARATION | Add master to dynamic inventory
+          ansible.builtin.add_host:
+            name: "k8s-master"
+            groups: 
+              - k8s_masters
+              - k8s_cluster
+            ansible_host: "{{ master_ip }}"
+            ansible_user: k8sadmin
+            ansible_ssh_private_key_file: "{{ ssh_key_file }}"
+            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o ConnectionAttempts=10"
+
+        - name: PREPARATION | Add workers to dynamic inventory
+          ansible.builtin.add_host:
+            name: "{{ worker_hostnames[idx] }}"
+            groups: 
+              - k8s_workers
+              - k8s_cluster
+            ansible_host: "{{ item }}"
+            ansible_user: k8sadmin
+            ansible_ssh_private_key_file: "{{ ssh_key_file }}"
+            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o ConnectionAttempts=10"
+          loop: "{{ worker_ips }}"
+          loop_control:
+            index_var: idx
+            label: "{{ item }}"
+
+        - name: PREPARATION | Display inventory
+          ansible.builtin.debug:
+            msg: |
+              Master: {{ master_ip }}
+              Workers: {{ worker_ips | join(', ') }}
+              Worker Hostnames: {{ worker_hostnames | join(', ') }}
+
+- name: STAGE 1 | Bootstrap all nodes (cloud-init and reboot)
+  hosts: k8s_cluster
+  gather_facts: false
+  serial: 0  # Run on all hosts in parallel
+  tasks:
+    - name: STAGE 1 | Ensure system is accessible
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.wait_for_connection:
+        delay: 2
+        timeout: 300
+
+    - name: STAGE 1 | Check if cloud-init marker exists
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.stat:
+        path: /var/lib/cloud/instance/boot-finished
+      register: cloudinit_marker
+  
+    - name: STAGE 1 | Wait for cloud-init completion
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.command: cloud-init status --wait
+      register: cloudinit_status
+      changed_when: false
+      failed_when: false
+      when: not cloudinit_marker.stat.exists
+
+    - name: STAGE 1 | Fail if cloud-init failed
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.fail:
+        msg: "cloud-init returned an error (rc={{ cloudinit_status.rc }})"
+      when:
+        - not cloudinit_marker.stat.exists
+        - cloudinit_status.rc not in [0,2]
+
+    - name: STAGE 1 | Ensure system is ready after cloud-init
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 300
+      when: not cloudinit_marker.stat.exists
+
+    - name: STAGE 1 | Check if reboot is required
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: STAGE 1 | Reboot system after cloud-init
+      tags: [ stage1, cloudinit ]
+      become: true
+      ansible.builtin.reboot:
+        msg: "Rebooting after cloud-init"
+        connect_timeout: 10
+        reboot_timeout: 300
+        pre_reboot_delay: 5
+        post_reboot_delay: 30
+        test_command: "uname -a"
+      when: not cloudinit_marker.stat.exists or reboot_required.stat.exists
+
+    - name: STAGE 1 | Wait for connection after reboot
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 300
+      when:
+        - not cloudinit_marker.stat.exists or reboot_required.stat.exists
+
+    - name: STAGE 1 | Gather system facts after reboot
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.setup:
+        gather_subset:
+          - network
+          - hardware
+      register: system_facts
+
+    - name: STAGE 1 | Success
+      tags: [ stage1, cloudinit ]
+      ansible.builtin.debug:
+        msg: "✓ Node {{ inventory_hostname }} is ready ({{ system_facts.ansible_facts.ansible_hostname }})"
+
+- name: STAGE 2 | Bootstrap Kubernetes control plane
+  hosts: k8s_masters
+  gather_facts: false
+  vars:
+    cni_engine: "{{ lookup('env', 'CNI_ENGINE') | default('calico', true) }}"
+    kubeconfig_path: /etc/kubernetes/admin.conf
+  tasks:
+    ###########################################################################
+    # CONTROL PLANE INIT
+    ###########################################################################
+    - name: STAGE 2 | Check if Kubernetes control-plane is already initialized
+      tags: [ stage2, control_plane ]
+      ansible.builtin.stat:
+        path: "{{ kubeconfig_path }}"
+      register: kubeadm_initialized
+
+    - name: STAGE 2 | Initialize Kubernetes control plane
+      tags: [ stage2, control_plane ]
+      become: true
+      ansible.builtin.command: bash /root/scripts/k8s-init.sh
+      async: 600
+      poll: 0
+      register: control_plane_job
+      when: not kubeadm_initialized.stat.exists
+
+    - name: STAGE 2 | Wait for control plane initialization
+      tags: [ stage2, control_plane ]
+      become: true
+      ansible.builtin.async_status:
+        jid: "{{ control_plane_job.ansible_job_id }}"
+      register: control_plane_result
+      until: control_plane_result.finished
+      retries: 600
+      delay: 1
+      when: not kubeadm_initialized.stat.exists
+
+    ###########################################################################
+    # WAIT FOR API SERVER
+    ###########################################################################
+    - name: STAGE 2 | Wait for Kubernetes API server to be ready
+      tags: [ stage2, control_plane ]
+      become: true
+      ansible.builtin.command: kubectl get --raw=/healthz
+      register: kube_ready
+      retries: 30
+      delay: 10
+      until: kube_ready.rc == 0
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    ###########################################################################
+    # CNI INSTALLATION
+    ###########################################################################
+    - name: STAGE 2 | Check if {{ cni_engine }} is already installed
+      tags: [ stage2, cni ]
+      become: true
+      ansible.builtin.command: kubectl get daemonset -n calico-system
+      register: cni_installed
+      failed_when: false
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: STAGE 2 | Initialize container network interface ({{ cni_engine }})
+      tags: [ stage2, cni ]
+      become: true
+      ansible.builtin.command: bash /root/scripts/{{ cni_engine }}-bootstrap.sh
+      async: 240
+      poll: 0
+      register: cni_job
+      when: '"No resources found in calico-system namespace" in cni_installed.stderr'
+
+    - name: STAGE 2 | Wait for CNI initialization
+      tags: [ stage2, cni ]
+      become: true
+      ansible.builtin.async_status:
+        jid: "{{ cni_job.ansible_job_id }}"
+      register: cni_result
+      until: cni_result.finished
+      retries: 240
+      delay: 1
+      when: '"No resources found in calico-system namespace" in cni_installed.stderr'
+
+    - name: STAGE 2 | Success
+      tags: [ stage2, control_plane ]
+      ansible.builtin.debug:
+        msg: "✓ CONTROL_PLANE_BOOTSTRAP completed and API server is ready"
+
+- name: STAGE 3 | Bootstrap Kubernetes worker nodes
+  hosts: k8s_workers
+  gather_facts: false
+  vars:
+    kubeconfig_path: /etc/kubernetes/admin.conf
+  tasks:
+    - name: STAGE 3 | Generate worker join command
+      tags: [ stage3, worker_join ]
+      become: true
+      delegate_to: k8s-master
+      run_once: true
+      ansible.builtin.command: kubeadm token create --print-join-command
+      register: worker_join_command
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: STAGE 3 | Set worker join command fact
+      tags: [ stage3, worker_join ]
+      ansible.builtin.set_fact:
+        worker_join_cmd: "{{ worker_join_command.stdout | trim }}"
+        cacheable: true
+
+    - name: STAGE 3 | Get current cluster nodes
+      tags: [ stage3, worker_join ]
+      become: true
+      delegate_to: k8s-master
+      ansible.builtin.shell: |
+        kubectl get nodes --no-headers 2>&1 | awk '{print $1}' || echo ""
+      register: current_nodes
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: STAGE 3 | Check if worker is already joined
+      tags: [ stage3, worker_join ]
+      delegate_to: k8s-master
+      become: true
+      command: kubectl get node {{ inventory_hostname }}
+      register: worker_node_check
+      failed_when: false
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: STAGE 3 | Set fact for membership
+      tags: [ stage3, worker_join ]
+      ansible.builtin.set_fact:
+        worker_already_joined: "{{ worker_node_check.rc == 0 }}"
+
+    - name: STAGE 3 | Join worker node to cluster
+      tags: [ stage3, worker_join ]
+      become: true
+      ansible.builtin.shell: "{{ worker_join_cmd }}"
+      async: 600
+      poll: 0
+      register: worker_join_job
+      when: not worker_already_joined
+
+    - name: STAGE 3 | Wait for worker to join
+      tags: [ stage3, worker_join ]
+      become: true
+      ansible.builtin.async_status:
+        jid: "{{ worker_join_job.ansible_job_id }}"
+      register: worker_join_result
+      until: worker_join_result.finished
+      retries: 600
+      delay: 1
+      when: not worker_already_joined
+
+    - name: STAGE 3 | Worker joined
+      tags: [ stage3, worker_join ]
+      ansible.builtin.debug:
+        msg: "Worker {{ inventory_hostname }} joined cluster."
+      when: not worker_already_joined
+
+    - name: STAGE 3 | Worker already part of cluster – skipping join
+      tags: [ stage3, worker_join ]
+      ansible.builtin.debug:
+        msg: "Worker {{ inventory_hostname }} already in the cluster. Skipping."
+      when: worker_already_joined
+
+    - name: Stage 3 | Success
+      tags: [ stage3, worker_join ]
+      ansible.builtin.debug:
+        msg: "✓ DATA_PLANE_BOOTSTRAP - all workers joined cluster"
+
+- name: STAGE 4 | Post-bootstrap configuration
+  hosts: localhost
+  gather_facts: false
+  vars:
+    workdir: "/podman/single-master-k8s"
+    kubeconfig_path: "{{ workdir }}/.kube/aws-k8s"
+  tasks:
+    - name: STAGE 4 | Retrieve kubeconfig
+      tags: [ stage4, kubeconfig, labels ]
+      become: true
+      delegate_to: k8s-master
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/admin.conf
+      register: kubeconfig_slurp
+
+    - name: STAGE 4 | Set kubeconfig fact
+      tags: [ stage4, kubeconfig ]
+      ansible.builtin.set_fact:
+        k8s_kubeconfig: "{{ kubeconfig_slurp.content | b64decode }}"
+        cacheable: true
+
+    - name: STAGE 4 | Create .kube directory
+      tags: [ stage4, kubeconfig, labels ]
+      ansible.builtin.file:
+        path: "{{ kubeconfig_path | dirname }}"
+        state: directory
+        mode: '0755'
+
+    - name: STAGE 4 | Save kubeconfig
+      tags: [ stage4, kubeconfig, labels ]
+      ansible.builtin.copy:
+        content: "{{ k8s_kubeconfig }}"
+        dest: "{{ kubeconfig_path }}"
+        mode: '0600'
+
+    - name: STAGE 4 | Label worker nodes
+      tags: [ stage4, labels ]
+      ansible.builtin.command: |
+        kubectl label node {{ item }} kubernetes.io/role=worker --overwrite
+      loop: "{{ groups['k8s_workers'] }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: STAGE 4 | Success
+      tags: [ stage4, kubeconfig, labels ]
+      ansible.builtin.debug:
+        msg: |          
+          To access your cluster, run:
+            export KUBECONFIG={{ kubeconfig_path }}
+          
+          Kubeconfig saved to: {{ kubeconfig_path }}
+          ✓ POST_BOOTSTRAP configuration completed
