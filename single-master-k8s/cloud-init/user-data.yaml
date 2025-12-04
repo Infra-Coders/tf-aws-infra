@@ -25,7 +25,7 @@ write_files:
  
       sudo apt-get update
       sudo apt-get upgrade -y
-      sudo apt-get install -y apt-transport-https ca-certificates curl gpg podman
+      sudo apt-get install -y apt-transport-https ca-certificates curl gpg
       export KUBERNETES_VERSION=v1.32
       export CRIO_VERSION=v1.32
       curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -42,26 +42,139 @@ write_files:
       sudo chmod -x /etc/update-motd.d/*
       # install kube tooling
       curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | sudo bash
-
-  - path: /root/k8s/tigera_installation.yaml
-    permissions: "0644"
+  - path: /root/scripts/k8s-ready.sh
+    permissions: "0755"
     content: |
-      kind: Installation
-      apiVersion: operator.tigera.io/v1
-      metadata:
-        name: default
-      spec:
-        calicoNetwork:
-          ipPools:
-            - cidr: 10.244.0.0/16
+      #!/bin/bash
+
+      calico_kobjects="deployment.apps/calico-apiserver deployment.apps/calico-kube-controllers deployment.apps/calico-typha deployment.apps/goldmane deployment.apps/whisker"
+      calico_kobjects_ds="daemonset.apps/calico-node daemonset.apps/csi-node-driver"
+
+      export KUBECONFIG=/etc/kubernetes/admin.conf
+
+      wait_for_kube_objects() {
+        local timeout=$1
+        local ns=$2
+        local condition=$3
+        shift 3
+        declare -A kobject
+        local kobject_pids=()
+        local kobject_failed_pids=()
+        local kobjects_created=0
+
+        printf "%0.s-" {1..80}
+        echo
+
+        kcmd="kubectl wait -n $ns"
+        [[ "$ns" == "NONE" ]] && kcmd="kubectl wait"
+
+        for _object in "$@"; do
+          printf "Wait for kobject=[%s] condition=%s\n" "$_object" "$condition"
+          $kcmd --for=$condition --timeout="$timeout"s $_object &
+          kobject_pids+=($!)
+          kobject[$!]="$${_object}"
+        done
+
+        for _pid in $${kobject_pids[*]}; do
+          wait $_pid || kobject_failed_pids+=($_pid)
+        done
+
+        for _pid in $${kobject_failed_pids[*]}; do
+          printf "[NOK] object=%s was not created!\n" "$${kobject[$_pid]}"
+          kobjects_created=1
+          kobjects_failed="$kobjects_failed $${kobject[$_pid]}"
+        done
+
+        if (( $kobjects_created == 1 )); then
+          printf "Kube objects [%s] were not created!\n" "$kobjects_failed"
+          return 1
+        fi
+
+        return 0
+      }
+
+      wait_for_kube_objects 300 NONE create "namespace/calico-system"
+      wait_for_kube_objects 240 calico-system create $calico_kobjects
+      wait_for_kube_objects 240 kube-system create "deployment.apps/coredns"
+
+      # restart components
+      printf "%0.s-" {1..80}
+      echo
+      echo "Restart kobjects $calico_kobjects"
+      echo "Restart kobjects $calico_kobjects_ds"
+
+      for _ko in $calico_kobjects $calico_kobjects_ds; do
+        kubectl -n calico-system rollout restart $_ko
+      done
+
+      wait_for_kube_objects 300 calico-system "condition=Available" $calico_kobjects
+
+      echo "Restart kobjects deployment.apps/coredns"
+      kubectl -n kube-system rollout restart deployment.apps/coredns
+      wait_for_kube_objects 300 kube-system "condition=Available" deployment.apps/coredns
+
   - path: /root/scripts/k8s-init.sh
     permissions: "0755"
     content: |
       #!/bin/bash
 
-      public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
-      kubeadm init --control-plane-endpoint=$public_dns:6443 --pod-network-cidr=10.244.0.0/16 --upload-certs | tee /root/k8s-kinit.log
+      export public_dns=$(curl http://169.254.169.254/latest/meta-data/public-hostname)
+      envsubst < /root/scripts/kubeadm-custom.tmpl > /root/scripts/kubeadm-custom.yaml
+      kubeadm init --config /root/scripts/kubeadm-custom.yaml --upload-certs | tee /root/k8s-kinit.log
       export KUBECONFIG=/etc/kubernetes/admin.conf
+
+  - path: /root/scripts/kubeadm-custom.tmpl
+    permissions: "0644"
+    content: |
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: InitConfiguration
+      localAPIEndpoint:
+        bindPort: 6443
+      nodeRegistration:
+        criSocket: unix:///var/run/crio/crio.sock
+        imagePullPolicy: IfNotPresent
+        imagePullSerial: true
+        kubeletExtraArgs:
+        - name: cloud-provider
+          value: external
+      timeouts:
+        controlPlaneComponentHealthCheck: 4m0s
+        discovery: 5m0s
+        etcdAPICall: 2m0s
+        kubeletHealthCheck: 4m0s
+        kubernetesAPICall: 1m0s
+        tlsBootstrap: 5m0s
+        upgradeManifests: 5m0s
+      ---
+      apiServer:
+        extraArgs:
+        - name: cloud-provider
+          value: external
+      apiVersion: kubeadm.k8s.io/v1beta4
+      certificatesDir: /etc/kubernetes/pki
+      clusterName: ic-k8slab
+      controlPlaneEndpoint: $public_dns:6443
+      controllerManager:
+        extraArgs:
+        - name: cloud-provider
+          value: external
+        - name: node-cidr-mask-size
+          value: "20"
+      dns: {}
+      encryptionAlgorithm: RSA-2048
+      etcd:
+        local:
+          dataDir: /var/lib/etcd
+      imageRepository: registry.k8s.io
+      kind: ClusterConfiguration
+      kubernetesVersion: v1.32.10
+      networking:
+        dnsDomain: cluster.local
+        podSubnet: 10.244.0.0/16
+        serviceSubnet: 10.96.0.0/16
+      proxy: {}
+      scheduler: {}
+
   - path: /root/scripts/calico-bootstrap.sh
     permissions: "0755"
     content: |
@@ -73,6 +186,7 @@ write_files:
       # eBPF
       kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/custom-resources-bpf.yaml
       kubectl patch installation default --type=merge -p '{"spec": {"calicoNetwork": {"ipPools": [{"cidr": "10.244.0.0/16"}]}}}'
+
   - path: /etc/modules-load.d/kubernetes.conf
     content: |
       br_netfilter

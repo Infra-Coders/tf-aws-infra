@@ -47,21 +47,46 @@ ami-02c70beba709cc62b   2024-07-24T13:31:11.000Z
 [...]
 ```
 
+### Setup Workdir
+
+> Note: Setup Workdir (amd64|arm64)
+```
+> git clone git@github.com:Infra-Coders/tf-aws-infra.git
+> cd tf-aws-infra/ic-utils
+> ./setup_WORKDIR
+[...]
+
+~/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/aws_get -> /Users/kzaremba/bin/aws_get
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/aws_login -> /Users/kzaremba/bin/aws_login
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/ic_git -> /Users/kzaremba/bin/ic_git
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/ic_ssh_wrapper -> /Users/kzaremba/bin/ic_ssh_wrapper
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_helm -> /Users/kzaremba/bin/podman_helm
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_kubectl -> /Users/kzaremba/bin/podman_kubectl
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_run -> /Users/kzaremba/bin/podman_run
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_terraform -> /Users/kzaremba/bin/podman_terraform
+/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ansible/ansible_run -> /Users/kzaremba/bin/ansible_run
+/Users/kzaremba/.ssh/ic-k8slab already exists.
+Overwrite (y/n)?
+
+```
+
+
 ### Provisioning Infra
 
 > Note: Terraform INIT
 ```
-> terraform init
+> cd tf-aws-infra/single-master-k8s
+> podman_terraform init
 
 Initializing the backend...
-
 Initializing provider plugins...
 - Reusing previous version of hashicorp/aws from the dependency lock file
-- Reusing previous version of hashicorp/template from the dependency lock file
-- Installing hashicorp/aws v6.21.0...
-- Installed hashicorp/aws v6.21.0 (signed by HashiCorp)
-- Installing hashicorp/template v2.2.0...
-- Installed hashicorp/template v2.2.0 (signed by HashiCorp)
+- Reusing previous version of hashicorp/tls from the dependency lock file
+- Reusing previous version of hashicorp/local from the dependency lock file
+- Using previously-installed hashicorp/aws v6.23.0
+- Using previously-installed hashicorp/tls v4.1.0
+- Using previously-installed hashicorp/local v2.6.1
 
 Terraform has been successfully initialized!
 
@@ -76,52 +101,29 @@ commands will detect it and remind you to do so if necessary.
 
 > Note: Terraform PLAN
 ```
-> terraform plan
-aws_vpc.ic-k8slab: Refreshing state... [id=vpc-090392cc5eb7cbc07]
-aws_key_pair.ic-k8slab-cluster: Refreshing state... [id=ic-k8slab-cluster]
-aws_internet_gateway.ic-k8slab-igw: Refreshing state... [id=igw-08cd886945397acd4]
-aws_route_table.ic-k8slab-route-table: Refreshing state... [id=rtb-028ad686c77788574]
-aws_subnet.ic-k8slab-1c: Refreshing state... [id=subnet-07e28846b9a845fdb]
-aws_subnet.ic-k8slab-1a: Refreshing state... [id=subnet-060577de26e6e1323]
-aws_subnet.ic-k8slab-1b: Refreshing state... [id=subnet-0bc46161f1e90b476]
-aws_route.ic-k8slab-route: Refreshing state... [id=r-rtb-028ad686c777885741080289494]
-aws_route_table_association.ic-k8slab-1c-association: Refreshing state... [id=rtbassoc-06f4b57d0a0a18f70]
-aws_route_table_association.ic-k8slab-1a-association: Refreshing state... [id=rtbassoc-084df43b6971a568c]
-aws_security_group.ic-k8slab-sg: Refreshing state... [id=sg-088c3c460ea53edc3]
-aws_route_table_association.ic-k8slab-1b-association: Refreshing state... [id=rtbassoc-03b4a61866c25b738]
-aws_instance.k8s-master["master1"]: Refreshing state... [id=i-097c3c3334878bf5e]
-aws_instance.k8s-worker["worker1"]: Refreshing state... [id=i-0b232f6c0a2c4d368]
 
-Note: Objects have changed outside of Terraform
-[...]
-```
-
-> Note: Terraform APPLY
-```
-> terraform apply
+> cd tf-aws-infra/single-master-k8s
+> podman_terraform plan
+data.aws_ami.ubuntu: Reading...
+data.aws_ami.ubuntu: Read complete after 0s [id=ami-0ccb7fb77fc31decd]
 
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
   + create
 
 Terraform will perform the following actions:
 
-  # aws_instance.k8s-master["master1"] will be created
-  + resource "aws_instance" "k8s-master" {
-      + ami                                  = "ami-0ccb7fb77fc31decd"
-      + arn                                  = (known after apply)
-      + associate_public_ip_address          = true
-      + availability_zone                    = (known after apply)
-      + disable_api_stop                     = (known after apply)
-      + disable_api_termination              = (known after apply)
-      + ebs_optimized                        = (known after apply)
-      + enable_primary_ipv6                  = (known after apply)
-      + force_destroy                        = false
-      + get_password_data                    = false
-      + host_id                              = (known after apply)
-
+  # aws_ec2_instance_metadata_defaults.enforce-imdsv2 will be created
+  + resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
+      + http_endpoint               = "no-preference"
+      + http_put_response_hop_limit = 3
+      + http_tokens                 = "required"
+      + id                          = (known after apply)
+      + instance_metadata_tags      = "no-preference"
+      + region                      = "eu-central-1"
+    }
 [...]
 
-Plan: 14 to add, 0 to change, 0 to destroy.
+Plan: 20 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
   + master_private_dns = {
@@ -132,216 +134,108 @@ Changes to Outputs:
     }
   + worker_private_dns = {
       + worker1 = (known after apply)
+      + worker2 = (known after apply)
+      + worker3 = (known after apply)
     }
   + worker_public_ip   = {
       + worker1 = (known after apply)
+      + worker2 = (known after apply)
+      + worker3 = (known after apply)
+    }
+
+```
+
+> Note: Terraform APPLY
+```
+> terraform apply
+
+podman_terraform apply
+data.aws_ami.ubuntu: Reading...
+data.aws_ami.ubuntu: Read complete after 1s [id=ami-0ccb7fb77fc31decd]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # aws_ec2_instance_metadata_defaults.enforce-imdsv2 will be created
+  + resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
+      + http_endpoint               = "no-preference"
+      + http_put_response_hop_limit = 3
+      + http_tokens                 = "required"
+      + id                          = (known after apply)
+      + instance_metadata_tags      = "no-preference"
+      + region                      = "eu-central-1"
+    }
+
+  # aws_iam_instance_profile.ic-aws-ebs-csi-ec2 will be created
+  + resource "aws_iam_instance_profile" "ic-aws-ebs-csi-ec2" {
+      + arn         = (known after apply)
+      + create_date = (known after apply)
+      + id          = (known after apply)
+      + name        = "ic-aws-ebs-csi-ec2"
+      + name_prefix = (known after apply)
+      + path        = "/"
+      + role        = "ic-aws-ebs-csi-role-ec2"
+      + tags_all    = (known after apply)
+      + unique_id   = (known after apply)
+    }
+[...]
+
+Plan: 20 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + master_private_dns = {
+      + master1 = (known after apply)
+    }
+  + master_public_ip   = {
+      + master1 = (known after apply)
+    }
+  + worker_private_dns = {
+      + worker1 = (known after apply)
+      + worker2 = (known after apply)
+      + worker3 = (known after apply)
+    }
+  + worker_public_ip   = {
+      + worker1 = (known after apply)
+      + worker2 = (known after apply)
+      + worker3 = (known after apply)
     }
 
 Do you want to perform these actions?
   Terraform will perform the actions described above.
   Only 'yes' will be accepted to approve.
 
-  Enter a value: yes
+  Enter a value:
+
 ```
 ### BOOTSTRAP KUBE
 
 > Note: BOOTSTRAP Kube
 ```
-> ./scripts/podman_run ./scripts/BOOTSTRAP_KUBE.sh
+> podman_run ./scripts/BOOTSTRAP_KUBE.sh
 --------------------------------------------------------------------------------
 STAGE: NODE_BOOTSTRAP
-NODE_BOOTSTRAP node=3.75.222.143
-NODE_BOOTSTRAP node=18.193.71.203
-NODE_BOOTSTRAP node=18.199.85.73
-NODE_BOOTSTRAP node=3.67.133.90
-Warning: Permanently added '3.75.222.143' (ED25519) to the list of known hosts.
-ip-10-0-1-29 cloud-init status: DONE
-ip-10-0-12-39 cloud-init status: DONE
-ip-10-0-4-230 cloud-init status: DONE
-ip-10-0-13-139 cloud-init status: DONE
+NODE_BOOTSTRAP node=3.71.184.121
+NODE_BOOTSTRAP node=3.71.206.191
+NODE_BOOTSTRAP node=3.71.34.88
+NODE_BOOTSTRAP node=63.176.97.58
+Warning: Permanently added '3.71.206.191' (ED25519) to the list of known hosts.
+Warning: Permanently added '3.71.34.88' (ED25519) to the list of known hosts.
+ip-10-0-8-16 cloud-init status: DONE
+ip-10-0-15-220 cloud-init status: DONE
+ip-10-0-6-47 cloud-init status: DONE
+ip-10-0-8-145 cloud-init status: DONE
 STAGE: NODE_BOOTSTRAP success!
 --------------------------------------------------------------------------------
 STAGE: NODE_REBOOT
-NODE_REBOOT node=3.75.222.143
-NODE_REBOOT node=18.193.71.203
-NODE_REBOOT node=18.199.85.73
-NODE_REBOOT node=3.67.133.90
+NODE_REBOOT node=3.71.184.121
+NODE_REBOOT node=3.71.206.191
+NODE_REBOOT node=3.71.34.88
+NODE_REBOOT node=63.176.97.58
 STAGE: NODE_REBOOT success!
---------------------------------------------------------------------------------
-STAGE: NODE_READY
-NODE_READY node=3.75.222.143
-NODE_READY node=18.193.71.203
-NODE_READY node=18.199.85.73
-NODE_READY node=3.67.133.90
-ip-10-0-1-29
-ip-10-0-4-230
-ip-10-0-13-139
-ip-10-0-12-39
-STAGE: NODE_READY success!
---------------------------------------------------------------------------------
-STAGE: CONTROL_PLANE_BOOTSTRAP
-CONTROL_PLANE_BOOTSTRAP node=3.75.222.143
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100    51  100    51    0     0  17671      0 --:--:-- --:--:-- --:--:-- 25500
-I1122 15:36:58.024944    1041 version.go:261] remote version is much newer: v1.34.2; falling back to: stable-1.32
-[init] Using Kubernetes version: v1.32.10
-[preflight] Running pre-flight checks
-[preflight] Pulling images required for setting up a Kubernetes cluster
-[preflight] This might take a minute or two, depending on the speed of your internet connection
-[preflight] You can also perform this action beforehand using 'kubeadm config images pull'
-[certs] Using certificateDir folder "/etc/kubernetes/pki"
-[certs] Generating "ca" certificate and key
-[certs] Generating "apiserver" certificate and key
-[certs] apiserver serving cert is signed for DNS names [ec2-3-75-222-143.eu-central-1.compute.amazonaws.com ip-10-0-4-230 kubernetes kubernetes.default kubernetes.default.svc kubernetes.default.svc.cluster.local] and IPs [10.96.0.1 10.0.4.230]
-[certs] Generating "apiserver-kubelet-client" certificate and key
-[certs] Generating "front-proxy-ca" certificate and key
-[certs] Generating "front-proxy-client" certificate and key
-[certs] Generating "etcd/ca" certificate and key
-[certs] Generating "etcd/server" certificate and key
-[certs] etcd/server serving cert is signed for DNS names [ip-10-0-4-230 localhost] and IPs [10.0.4.230 127.0.0.1 ::1]
-[certs] Generating "etcd/peer" certificate and key
-[certs] etcd/peer serving cert is signed for DNS names [ip-10-0-4-230 localhost] and IPs [10.0.4.230 127.0.0.1 ::1]
-[certs] Generating "etcd/healthcheck-client" certificate and key
-[certs] Generating "apiserver-etcd-client" certificate and key
-[certs] Generating "sa" key and public key
-[kubeconfig] Using kubeconfig folder "/etc/kubernetes"
-[kubeconfig] Writing "admin.conf" kubeconfig file
-[kubeconfig] Writing "super-admin.conf" kubeconfig file
-[kubeconfig] Writing "kubelet.conf" kubeconfig file
-[kubeconfig] Writing "controller-manager.conf" kubeconfig file
-[kubeconfig] Writing "scheduler.conf" kubeconfig file
-[etcd] Creating static Pod manifest for local etcd in "/etc/kubernetes/manifests"
-[control-plane] Using manifest folder "/etc/kubernetes/manifests"
-[control-plane] Creating static Pod manifest for "kube-apiserver"
-[control-plane] Creating static Pod manifest for "kube-controller-manager"
-[control-plane] Creating static Pod manifest for "kube-scheduler"
-[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
-[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
-[kubelet-start] Starting the kubelet
 
 [...]
-
-STAGE: DATA_PLANE_BOOTSTRAP success!
---------------------------------------------------------------------------------
-CMD: GET_KUBECONFIG
-Add Workers labels
-node/ip-10-0-12-39 labeled
-node/ip-10-0-13-139 labeled
-node/ip-10-0-1-29 labeled
-
-```
-
-### BOOTSTRAP KUBE Hard Way
-
-> Note: Update the local cache of Nodes data
-```
-> ./scripts/tf_masters
-> ./scripts/tf_workers
-```
-
-> Note: Login to Nodes (masters, workers) & check clooud-init log -> Nodes do upgrades and so on ...
-```
-> terraform output 
-master_private_dns = {
-  "master1" = "ip-10-0-1-83.eu-central-1.compute.internal"
-}
-master_public_ip = {
-  "master1" = "3.71.17.135"
-}
-worker_private_dns = {
-  "worker1" = "ip-10-0-11-214.eu-central-1.compute.internal"
-}
-worker_public_ip = {
-  "worker1" = "63.177.249.124"
-}
-
-
-> ./scripts/parse_tf_output ./nodes/workers_public_ip.json 
-worker1:3.70.70.157
-
-> ./scripts/parse_tf_output ./nodes/masters_public_ip.json 
-master1:52.57.98.164
-
-> ./scripts/aws_login 3.71.17.135 
-Warning: Permanently added '3.71.17.135' (ED25519) to the list of known hosts.
-
-The programs included with the Ubuntu system are free software;
-the exact distribution terms for each program are described in the
-individual files in /usr/share/doc/*/copyright.
-
-Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
-applicable law.
-
-$ sudo su -
-root@ip-10-0-1-83:~# tail -f /var/log/cloud-init-output.log
-[...]
-
-No user sessions are running outdated binaries.
-
-No VM guests are running outdated hypervisor (qemu) binaries on this host.
-Cloud-init v. 24.4.1-0ubuntu0~24.04.3 finished at Fri, 21 Nov 2025 17:42:21 +0000. Datasource DataSourceEc2Local.  Up 141.56 seconds
-```
-
-> Note: Reboot nodes (once cloud-init finishes ^^), all masters & workers
-```
-> ./scripts/aws_login 3.71.17.135 "sudo shutdown -r now"
-
-Broadcast message from root@ip-10-0-1-83 on pts/1 (Fri 2025-11-21 17:52:39 UTC):
-
-The system will reboot now!
-
-Connection to 3.71.17.135 closed.
-
-```
-
-> Note: BOOTSTRAP KUBE CLUSTER
-```
-> ./scripts/BOOTSTRAP_KUBE_hard_way.sh
-Kubernetes init ControlPlane
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100    50  100    50    0     0  31545      0 --:--:-- --:--:-- --:--:-- 50000
-I1121 17:57:11.740199    1252 version.go:261] remote version is much newer: v1.34.2; falling back to: stable-1.32
-[init] Using Kubernetes version: v1.32.10
-[preflight] Running pre-flight checks
-[preflight] Pulling images required for setting up a Kubernetes cluster
-[preflight] This might take a minute or two, depending on the speed of your internet connection
-[preflight] You can also perform this action beforehand using 'kubeadm config images pull'
-[...]
-[upload-certs] Using certificate key:
-8c32b5c9d95069017afa2f01d7e76f21f6336de183fa14a9e684a7afbbf526e4
-[mark-control-plane] Marking the node ip-10-0-1-83 as control-plane by adding the labels: [node-role.kubernetes.io/control-plane node.kubernetes.io/exclude-from-external-load-balancers]
-[mark-control-plane] Marking the node ip-10-0-1-83 as control-plane by adding the taints [node-role.kubernetes.io/control-plane:NoSchedule]
-[bootstrap-token] Using token: pnxqhn.88dxqacdn78raufi
-[bootstrap-token] Configuring bootstrap tokens, cluster-info ConfigMap, RBAC Roles
-[bootstrap-token] Configured RBAC rules to allow Node Bootstrap tokens to get nodes
-[bootstrap-token] Configured RBAC rules to allow Node Bootstrap tokens to post CSRs in order for nodes to get long term certificate credentials
-[bootstrap-token] Configured RBAC rules to allow the csrapprover controller automatically approve CSRs from a Node Bootstrap Token
-[bootstrap-token] Configured RBAC rules to allow certificate rotation for all node client certificates in the cluster
-[bootstrap-token] Creating the "cluster-info" ConfigMap in the "kube-public" namespace
-[kubelet-finalize] Updating "/etc/kubernetes/kubelet.conf" to point to a rotatable kubelet client certificate and key
-[addons] Applied essential addon: CoreDNS
-[addons] Applied essential addon: kube-proxy
-
-Your Kubernetes control-plane has initialized successfully!
-
-To start using your cluster, you need to run the following as a regular user:
-
-  mkdir -p $HOME/.kube
-  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-  sudo chown $(id -u):$(id -g) $HOME/.kube/config
-[...]
-Kubernetes adding Workers
-[preflight] Running pre-flight checks
-[preflight] Reading configuration from the "kubeadm-config" ConfigMap in namespace "kube-system"...
-[preflight] Use 'kubeadm init phase upload-config --config your-config.yaml' to re-upload it.
-[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
-[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
-[kubelet-start] Starting the kubelet
-[kubelet-check] Waiting for a healthy kubelet at http://127.0.0.1:10248/healthz. This can take up to 4m0s
-[kubelet-check] The kubelet is healthy after 518.26082ms
-[kubelet-start] Waiting for the kubelet to perform the TLS Bootstrap
 
 This node has joined the cluster:
 * Certificate signing request was sent to apiserver and a response was received.
@@ -349,9 +243,55 @@ This node has joined the cluster:
 
 Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
 
-Configure local kubeconf
+
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+
+
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+
+STAGE: DATA_PLANE_BOOTSTRAP success!
+--------------------------------------------------------------------------------
+STAGE: KUBE_READY
+KUBE_READY node=3.71.184.121
+--------------------------------------------------------------------------------
+Wait for kobject=[namespace/calico-system] condition=create
+
+[...]
+
+Wait for kobject=[deployment.apps/calico-apiserver] condition=condition=Available
+Wait for kobject=[deployment.apps/calico-kube-controllers] condition=condition=Available
+Wait for kobject=[deployment.apps/calico-typha] condition=condition=Available
+Wait for kobject=[deployment.apps/goldmane] condition=condition=Available
+Wait for kobject=[deployment.apps/whisker] condition=condition=Available
+deployment.apps/calico-typha condition met
+deployment.apps/calico-kube-controllers condition met
+deployment.apps/calico-apiserver condition met
+deployment.apps/whisker condition met
+deployment.apps/goldmane condition met
+Restart kobjects deployment.apps/coredns
+deployment.apps/coredns restarted
+--------------------------------------------------------------------------------
+Wait for kobject=[deployment.apps/coredns] condition=condition=Available
+deployment.apps/coredns condition met
+STAGE: KUBE_READY success!
+--------------------------------------------------------------------------------
+CMD: GET_KUBECONFIG
 Add Workers labels
-node/ip-10-0-11-214 labeled
+node/ip-10-0-6-47 labeled
+node/ip-10-0-8-145 labeled
+node/ip-10-0-8-16 labeled
+********************************************************************************
+export KUBECONFIG=~/.kube/aws-k8s
+********************************************************************************
+
 ```
 
 > Note: Enjoy new Kube cluster

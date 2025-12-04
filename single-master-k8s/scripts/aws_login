@@ -1,6 +1,0 @@
-#!/bin/bash
-
-host=$1
-shift
-
-ssh -t -o StrictHostKeyChecking=no -i ssh/ic-k8slab-cluster.pem k8sadmin@${host} "$@"

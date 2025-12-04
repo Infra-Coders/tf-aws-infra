@@ -1,0 +1,30 @@
+#!/bin/bash
+
+arch=$(arch)
+
+[[ "${arch}" == "x86_64" ]] && arch='amd64'
+
+# build images
+pushd $(pwd)
+
+cd ./podman/ic-runtime && \
+  podman build --platform linux/${arch} -t ic-podman-runtime -f ./Containerfile.${arch} .  
+popd
+
+pushd $(pwd)
+cd ./podman/ansible && \
+  podman build --platform linux/${arch} -t ic-podman-ansible -f ./Containerfile.${arch} .
+popd
+
+mkdir -p ~/.kube
+mkdir -p ~/.ssh
+mkdir -p ~/bin
+
+cp -v ${PWD}/bin_utils/* ~/bin
+cp -v ${PWD}/podman/ic-runtime/podman_* ~/bin
+cp -v ${PWD}/podman/ansible/ansible_run ~/bin
+
+ssh-keygen -t rsa -b 4096  -f ~/.ssh/ic-k8slab -q -N ""
+mkdir -p ../single-master-k8s/ssh
+cp -v ~/.ssh/ic-k8slab.pub ../single-master-k8s/ssh
+chmod 600 ../single-master-k8s/ssh/ic-k8slab.pub
