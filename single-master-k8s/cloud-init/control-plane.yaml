@@ -1,0 +1,287 @@
+#cloud-config
+users:
+  - name: k8sadmin
+    gecos: k8sadmin
+    primary_group: k8sadmin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin, root, wheel
+    lock_passwd: false
+    ssh_authorized_keys:
+      - '${k8sadmin_ssh_key}'
+write_files:
+  - path: /etc/modules-load.d/kubernetes.conf
+    content: |
+      br_netfilter
+      overlay
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+  - path: /root/kubeadm/config.yaml
+    permissions: "0644"
+    content: |
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: ClusterConfiguration
+      kubernetesVersion: "stable-${kube_version}"
+      networking:
+        podSubnet: ${pod_cidr}
+        serviceSubnet: ${service_cidr}
+      apiServer:
+        extraArgs:
+          - name: authorization-mode
+            value: Node,RBAC
+      controllerManager:
+        extraArgs:
+          - name: bind-address
+            value: "0.0.0.0"
+      scheduler:
+        extraArgs:
+          - name: bind-address
+            value: "0.0.0.0"
+  - path: /root/scripts/bootstrap-common.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      swapoff -a
+      sed -i.bak '/ swap / s/^/#/' /etc/fstab || true
+
+      apt-get update
+      apt-get install -y apt-transport-https ca-certificates curl gpg software-properties-common jq unzip conntrack
+
+      if ! command -v aws >/dev/null 2>&1; then
+        curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+        unzip -q /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install
+        rm -rf /tmp/aws /tmp/awscliv2.zip
+      fi
+
+      KUBE_VERSION="v${kube_version}"
+      CRIO_VERSION="v${kube_version}"
+
+      curl -fsSL https://pkgs.k8s.io/core:/stable:/$${KUBE_VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$${KUBE_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+
+      curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/$${CRIO_VERSION}/deb/Release.key  | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/$${CRIO_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/cri-o.list
+
+      apt-get update
+      apt-get install -y kubelet kubeadm kubectl cri-o
+      apt-mark hold kubelet kubeadm kubectl
+
+      systemctl enable crio --now
+      systemctl enable kubelet --now
+      chmod -x /etc/update-motd.d/* || true
+
+      modprobe overlay
+      modprobe br_netfilter
+      sysctl --system
+  - path: /root/scripts/control-plane-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      NODE_ROLE="${node_role}"
+      [[ "$${NODE_ROLE}" == "control-plane" ]] || exit 0
+
+      if [[ -f /etc/kubernetes/admin.conf ]]; then
+        echo "Kubernetes control plane already configured, skipping bootstrap."
+        exit 0
+      fi
+
+      export AWS_DEFAULT_REGION="${aws_region}"
+
+      TABLE_NAME="${dynamodb_lock_table}"
+      PARAM_PREFIX="${ssm_parameter_prefix}"
+      KMS_KEY_ID="${kms_key_id}"
+      LOCK_TTL="${lock_ttl_seconds}"
+      LOCK_KEY="control-plane"
+      POD_CIDR="${pod_cidr}"
+      SERVICE_CIDR="${service_cidr}"
+      CONTROL_PLANE_ENDPOINT_PARAM="$${PARAM_PREFIX}/control-plane-endpoint"
+
+      INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+      LOCAL_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+      PUBLIC_DNS=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname)
+
+      CALICO_VERSION="v3.31.1"
+      CONTROL_PLANE_PARAM="$${PARAM_PREFIX}/control-plane-join"
+      WORKER_PARAM="$${PARAM_PREFIX}/worker-join"
+      ENDPOINT="$${LOCAL_IP}:6443"
+
+      refresh_lock() {
+        local ttl_value=$(( $(date +%s) + LOCK_TTL ))
+        aws dynamodb update-item \
+          --table-name "$${TABLE_NAME}" \
+          --key "{\"LockID\": {\"S\": \"$${LOCK_KEY}\"}}" \
+          --update-expression "SET #T = :ttl" \
+          --expression-attribute-names '{"#T": "TTL"}' \
+          --expression-attribute-values "{\":ttl\": {\"N\": \"$${ttl_value}\"}}" \
+          >/dev/null
+      }
+
+      start_lock_refresh() {
+        while true; do
+          refresh_lock || true
+          sleep 120
+        done
+      }
+
+      acquire_lock() {
+        local now ttl_value existing_ttl
+        now=$(date +%s)
+        existing_ttl=$(aws dynamodb get-item --table-name "$${TABLE_NAME}" --key "{\"LockID\": {\"S\": \"$${LOCK_KEY}\"}}" --query 'Item.TTL.N' --output text 2>/dev/null || echo "None")
+
+        # If a valid lock exists, or join params already exist, become follower immediately.
+        if [[ "$${existing_ttl}" != "None" && "$${existing_ttl}" != "null" && "$${existing_ttl}" -gt "$${now}" ]]; then
+          return 1
+        fi
+        join_val=$(aws ssm get-parameter --name "$${CONTROL_PLANE_PARAM}" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+        if [[ -n "$${join_val}" && "$${join_val}" != "pending" ]]; then
+          return 1
+        fi
+
+        ttl_value=$(( now + LOCK_TTL ))
+        if aws dynamodb put-item \
+          --table-name "$${TABLE_NAME}" \
+          --item "{\"LockID\": {\"S\": \"$${LOCK_KEY}\"}, \"Holder\": {\"S\": \"$${INSTANCE_ID}\"}, \"CreatedAt\": {\"N\": \"$${now}\"}, \"TTL\": {\"N\": \"$${ttl_value}\"}, \"State\": {\"S\": \"pending\"}}" \
+          --condition-expression "attribute_not_exists(LockID) OR #T < :now" \
+          --expression-attribute-names '{"#T": "TTL"}' \
+          --expression-attribute-values "{\":now\": {\"N\": \"$${now}\"}}" >/dev/null; then
+          echo "Acquired leader lock"
+          return 0
+        fi
+
+        # If we failed to acquire, become follower.
+        return 1
+      }
+
+      update_lock_state() {
+        local state="$1"
+        local ttl_value=$(( $(date +%s) + LOCK_TTL ))
+        aws dynamodb update-item \
+          --table-name "$${TABLE_NAME}" \
+          --key "{\"LockID\": {\"S\": \"$${LOCK_KEY}\"}}" \
+          --update-expression "SET #S = :state, LeaderId = :id, LeaderIp = :ip, #T = :ttl" \
+          --expression-attribute-names '{"#S": "State", "#T": "TTL"}' \
+          --expression-attribute-values "{\":state\": {\"S\": \"$${state}\"}, \":id\": {\"S\": \"$${INSTANCE_ID}\"}, \":ip\": {\"S\": \"$${LOCAL_IP}\"}, \":ttl\": {\"N\": \"$${ttl_value}\"}}" \
+          >/dev/null
+      }
+
+      publish_parameter() {
+        local name="$1"
+        local value="$2"
+        local args=(--name "$${name}" --value "$${value}" --type "SecureString" --overwrite --region "$${AWS_DEFAULT_REGION}")
+        [[ -n "$${KMS_KEY_ID}" ]] && args+=(--key-id "$${KMS_KEY_ID}")
+        aws ssm put-parameter "$${args[@]}" >/dev/null
+      }
+
+      run_kubeadm_init() {
+        {
+          echo "apiVersion: kubeadm.k8s.io/v1beta4"
+          echo "kind: InitConfiguration"
+          echo "localAPIEndpoint:"
+          echo "  advertiseAddress: $${LOCAL_IP}"
+          echo "  bindPort: 6443"
+          echo "nodeRegistration:"
+          echo "  name: $${PUBLIC_DNS}"
+          echo "---"
+          echo "apiVersion: kubeadm.k8s.io/v1beta4"
+          echo "kind: ClusterConfiguration"
+          echo "kubernetesVersion: \"v${kube_version}.0\""
+          echo "controlPlaneEndpoint: \"$${ENDPOINT}\""
+          echo "networking:"
+          echo "  podSubnet: $${POD_CIDR}"
+          echo "  serviceSubnet: $${SERVICE_CIDR}"
+          echo "apiServer:"
+          echo "  extraArgs:"
+          echo "    - name: authorization-mode"
+          echo "      value: Node,RBAC"
+          echo "controllerManager:"
+          echo "  extraArgs:"
+          echo "    - name: bind-address"
+          echo "      value: \"0.0.0.0\""
+          echo "scheduler:"
+          echo "  extraArgs:"
+          echo "    - name: bind-address"
+          echo "      value: \"0.0.0.0\""
+        } > /root/kubeadm/init-config.yaml
+
+        kubeadm init --config /root/kubeadm/init-config.yaml --upload-certs | tee /root/kubeadm-init.log
+        export KUBECONFIG=/etc/kubernetes/admin.conf
+
+        local cert_key
+        cert_key=$(kubeadm init phase upload-certs --upload-certs | tail -n 1)
+
+        local base_join control_plane_join worker_join
+        base_join="$(kubeadm token create --print-join-command)"
+        worker_join="$${base_join}"
+        control_plane_join="$${base_join} --control-plane --certificate-key $${cert_key}"
+
+        publish_parameter "$${CONTROL_PLANE_PARAM}" "$${control_plane_join}"
+        publish_parameter "$${WORKER_PARAM}" "$${worker_join}"
+        publish_parameter "$${CONTROL_PLANE_ENDPOINT_PARAM}" "$${ENDPOINT}"
+
+        update_lock_state "initialized"
+
+        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/$${CALICO_VERSION}/manifests/operator-crds.yaml
+        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/$${CALICO_VERSION}/manifests/tigera-operator.yaml
+        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/$${CALICO_VERSION}/manifests/custom-resources-bpf.yaml
+        kubectl patch installation default --type=merge -p "{\"spec\": {\"calicoNetwork\": {\"ipPools\": [{\"cidr\": \"$${POD_CIDR}\"}]}}}"
+      }
+
+      join_existing_control_plane() {
+        local control_plane_join="" endpoint_value="" endpoint_host="" endpoint_port=""
+        while true; do
+          control_plane_join=$(aws ssm get-parameter --name "$${CONTROL_PLANE_PARAM}" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+          local trimmed_join
+          trimmed_join=$(echo "$${control_plane_join}" | tr -d '\r')
+          trimmed_join=$(echo "$${trimmed_join}" | sed 's/^ *//;s/ *$//')
+          if [[ -z "$${trimmed_join}" ]]; then
+            sleep $((5 + RANDOM % 10))
+            continue
+          fi
+          if echo "$${trimmed_join}" | grep -qi '^pending'; then
+            sleep $((5 + RANDOM % 10))
+            continue
+          fi
+          if ! echo "$${trimmed_join}" | grep -q '^kubeadm join'; then
+            sleep $((5 + RANDOM % 10))
+            continue
+          fi
+          control_plane_join="$(echo "$${trimmed_join}" | head -n1)"
+          break
+        done
+
+        endpoint_value=$(aws ssm get-parameter --name "$${CONTROL_PLANE_ENDPOINT_PARAM}" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+        if [[ -n "$${endpoint_value}" && "$${endpoint_value}" != "pending" ]]; then
+          endpoint_host=$(echo "$${endpoint_value}" | cut -d: -f1)
+          endpoint_port=$(echo "$${endpoint_value}" | cut -d: -f2)
+        fi
+
+        if [[ -n "$${endpoint_host}" && -n "$${endpoint_port}" ]]; then
+          for _ in $(seq 1 30); do
+            timeout 5 bash -c "echo >/dev/tcp/$${endpoint_host}/$${endpoint_port}" 2>/dev/null && break
+            sleep 5
+          done
+        fi
+
+        $${control_plane_join} --apiserver-advertise-address "$${LOCAL_IP}" --node-name "$${PUBLIC_DNS}"
+      }
+
+      if acquire_lock; then
+        start_lock_refresh &
+        REFRESH_PID=$!
+        trap "kill $${REFRESH_PID} 2>/dev/null || true" EXIT
+        run_kubeadm_init
+      else
+        echo "Lock not acquired; joining existing control plane."
+        join_existing_control_plane
+      fi
+runcmd:
+  - [bash, "-c", "/root/scripts/bootstrap-common.sh"]
+  - [bash, "-c", "/root/scripts/control-plane-bootstrap.sh"]

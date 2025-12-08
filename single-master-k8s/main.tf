@@ -27,20 +27,23 @@ resource "local_file" "ssh_public_key" {
   directory_permission = "0700"
 }
 
-resource "aws_instance" "k8s-master" {
-  ami      = data.aws_ami.ubuntu.id
-  for_each = toset(local.masters[var.masters_kind])
+resource "aws_instance" "k8s_master" {
+  count = var.control_plane_count
 
-  instance_type = local.instance_type[var.masters_kind]
+  ami           = local.control_plane_ami
+  instance_type = var.control_plane_instance_type
 
-  subnet_id                   = aws_subnet.ic-k8slab-1a.id
+  subnet_id                   = element(local.subnet_ids, count.index % length(local.subnet_ids))
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
   associate_public_ip_address = true
-  user_data_base64            = local.cloud_init_user_data_base64
+  user_data_base64            = base64encode(templatefile("${path.module}/cloud-init/control-plane.yaml", merge(local.cloud_init_common_vars, { node_role = "control-plane" })))
   key_name                    = aws_key_pair.ic-k8slab-cluster.key_name
+  iam_instance_profile        = aws_iam_instance_profile.k8s_nodes.name
 
   tags = {
-    Name = each.value
+    Name    = local.control_plane_names[count.index]
+    Role    = "control-plane"
+    Cluster = var.cluster_name
   }
 
   root_block_device {
@@ -57,25 +60,29 @@ resource "aws_instance" "k8s-master" {
     aws_subnet.ic-k8slab-1a,
     aws_internet_gateway.ic-k8slab-igw,
     aws_route.ic-k8slab-route,
+    aws_dynamodb_table.leader_lock,
   ]
+  user_data_replace_on_change = true
 }
 
-resource "aws_instance" "k8s-worker" {
-  ami = data.aws_ami.ubuntu.id
+resource "aws_instance" "k8s_worker" {
+  count = var.worker_count
 
-  for_each = toset(local.workers[var.workers_kind])
+  ami           = local.worker_ami
+  instance_type = var.worker_instance_type
 
-  subnet_id                   = aws_subnet.ic-k8slab-1a.id
+  subnet_id                   = element(local.subnet_ids, count.index % length(local.subnet_ids))
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
   associate_public_ip_address = true
-  user_data_base64            = local.cloud_init_user_data_base64
+  user_data_base64            = base64encode(templatefile("${path.module}/cloud-init/worker.yaml", merge(local.cloud_init_common_vars, { node_role = "worker" })))
   key_name                    = aws_key_pair.ic-k8slab-cluster.key_name
+  iam_instance_profile        = aws_iam_instance_profile.k8s_nodes.name
 
   tags = {
-    Name = each.value
+    Name    = local.worker_names[count.index]
+    Role    = "worker"
+    Cluster = var.cluster_name
   }
-
-  instance_type = local.instance_type[var.workers_kind]
 
   root_block_device {
     volume_size = 30
@@ -91,5 +98,56 @@ resource "aws_instance" "k8s-worker" {
     aws_subnet.ic-k8slab-1a,
     aws_internet_gateway.ic-k8slab-igw,
     aws_route.ic-k8slab-route,
+    aws_dynamodb_table.leader_lock,
   ]
+  user_data_replace_on_change = true
+}
+
+# Pre-create SSM parameters so they are managed/destroyed with Terraform.
+resource "aws_ssm_parameter" "control_plane_join" {
+  name  = "${var.ssm_parameter_prefix}/control-plane-join"
+  type  = "SecureString"
+  value = "pending"
+  key_id = var.kms_key_id != "" ? var.kms_key_id : null
+
+  tags = {
+    Name    = "${var.cluster_name}-control-plane-join"
+    Cluster = var.cluster_name
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_ssm_parameter" "worker_join" {
+  name  = "${var.ssm_parameter_prefix}/worker-join"
+  type  = "SecureString"
+  value = "pending"
+  key_id = var.kms_key_id != "" ? var.kms_key_id : null
+
+  tags = {
+    Name    = "${var.cluster_name}-worker-join"
+    Cluster = var.cluster_name
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_ssm_parameter" "control_plane_endpoint" {
+  name  = "${var.ssm_parameter_prefix}/control-plane-endpoint"
+  type  = "SecureString"
+  value = "pending"
+  key_id = var.kms_key_id != "" ? var.kms_key_id : null
+
+  tags = {
+    Name    = "${var.cluster_name}-control-plane-endpoint"
+    Cluster = var.cluster_name
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
 }

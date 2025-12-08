@@ -1,0 +1,124 @@
+#cloud-config
+users:
+  - name: k8sadmin
+    gecos: k8sadmin
+    primary_group: k8sadmin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin, root, wheel
+    lock_passwd: false
+    ssh_authorized_keys:
+      - '${k8sadmin_ssh_key}'
+write_files:
+  - path: /etc/modules-load.d/kubernetes.conf
+    content: |
+      br_netfilter
+      overlay
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+  - path: /root/scripts/bootstrap-common.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      swapoff -a
+      sed -i.bak '/ swap / s/^/#/' /etc/fstab || true
+
+      apt-get update
+      apt-get install -y apt-transport-https ca-certificates curl gpg software-properties-common jq unzip conntrack
+
+      if ! command -v aws >/dev/null 2>&1; then
+        curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+        unzip -q /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install
+        rm -rf /tmp/aws /tmp/awscliv2.zip
+      fi
+
+      KUBE_VERSION="v${kube_version}"
+      CRIO_VERSION="v${kube_version}"
+
+      curl -fsSL https://pkgs.k8s.io/core:/stable:/$${KUBE_VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$${KUBE_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+
+      curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/$${CRIO_VERSION}/deb/Release.key  | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/$${CRIO_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/cri-o.list
+
+      apt-get update
+      apt-get install -y kubelet kubeadm kubectl cri-o
+      apt-mark hold kubelet kubeadm kubectl
+
+      systemctl enable crio --now
+      systemctl enable kubelet --now
+      chmod -x /etc/update-motd.d/* || true
+
+      modprobe overlay
+      modprobe br_netfilter
+      sysctl --system
+  - path: /root/scripts/worker-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      if [[ -f /etc/kubernetes/kubelet.conf ]]; then
+        echo "Worker node already joined, skipping."
+        exit 0
+      fi
+
+      export AWS_DEFAULT_REGION="${aws_region}"
+
+      TABLE_NAME="${dynamodb_lock_table}"
+      PARAM_PREFIX="${ssm_parameter_prefix}"
+      LOCK_KEY="control-plane"
+      WORKER_PARAM="$${PARAM_PREFIX}/worker-join"
+
+      wait_for_control_plane() {
+        local state=""
+        while [[ "$${state}" != "initialized" ]]; do
+          state=$(aws dynamodb get-item --table-name "$${TABLE_NAME}" --key "{\"LockID\": {\"S\": \"$${LOCK_KEY}\"}}" --query 'Item.State.S' --output text 2>/dev/null || true)
+          [[ "$${state}" == "initialized" ]] && return 0
+          # If lock is gone but a valid join command exists, break out.
+          local jcmd
+          jcmd=$(aws ssm get-parameter --name "$${WORKER_PARAM}" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+          local tjcmd
+          tjcmd=$(echo "$${jcmd}" | tr -d '\r' | sed 's/^ *//;s/ *$//')
+          if echo "$${tjcmd}" | grep -q '^kubeadm join'; then
+            return 0
+          fi
+          sleep $((5 + RANDOM % 10))
+        done
+      }
+
+      join_worker() {
+        local join_cmd=""
+        while true; do
+          join_cmd=$(aws ssm get-parameter --name "$${WORKER_PARAM}" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+          local tcmd
+          tcmd=$(echo "$${join_cmd}" | tr -d '\r' | sed 's/^ *//;s/ *$//')
+          if [[ -z "$${tcmd}" ]]; then
+            sleep $((5 + RANDOM % 10))
+            continue
+          fi
+          if echo "$${tcmd}" | grep -qi '^pending'; then
+            sleep $((5 + RANDOM % 10))
+            continue
+          fi
+          if ! echo "$${tcmd}" | grep -q '^kubeadm join'; then
+            sleep $((5 + RANDOM % 10))
+            continue
+          fi
+          join_cmd="$(echo "$${tcmd}" | head -n1)"
+          break
+        done
+        $${join_cmd}
+      }
+
+      wait_for_control_plane
+      join_worker
+runcmd:
+  - [bash, "-c", "/root/scripts/bootstrap-common.sh"]
+  - [bash, "-c", "/root/scripts/worker-bootstrap.sh"]

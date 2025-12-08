@@ -1,5 +1,12 @@
 # tf-aws-infra
 
+## Pattern B: Automatic Leader Election (DynamoDB + SSM)
+- Control plane count is dynamic (`control_plane_count`). All masters share the same cloud-init and race for the DynamoDB lock (`dynamodb_lock_table_name`, default derived from `cluster_name`).
+- Leader runs `kubeadm init`, publishes control-plane/worker join commands to SSM Parameter Store (`ssm_parameter_prefix`), and applies Calico eBPF. Followers automatically join the control plane. Workers poll SSM and join automatically.
+- Required IAM is provided via instance profile; SSM parameters are `SecureString` (optional `kms_key_id`).
+- Key vars: `control_plane_count`, `worker_count`, `control_plane_instance_type`, `worker_instance_type`, `control_plane_ami_id`/`worker_ami_id`, `kube_version`, `pod_cidr`, `service_cidr`, `aws_region`.
+- Cloud-init templates: `cloud-init/control-plane.yaml`, `cloud-init/worker.yaml`.
+
 ### Useful links
 #### K8s
 [install kubeadm](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)<br>

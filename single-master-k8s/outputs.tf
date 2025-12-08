@@ -20,24 +20,24 @@
 
 output "master_public_ip" {
   value = {
-    for m in local.masters[var.masters_kind] : m => aws_instance.k8s-master[m].public_ip
+    for idx, inst in aws_instance.k8s_master : inst.tags.Name => inst.public_ip
   }
 }
 
 output "master_private_dns" {
   value = {
-    for w in local.masters[var.masters_kind] : w => aws_instance.k8s-master[w].private_dns
+    for _, inst in aws_instance.k8s_master : inst.tags.Name => inst.private_dns
   }
 }
 
 output "worker_public_ip" {
   value = {
-    for w in local.workers[var.workers_kind] : w => aws_instance.k8s-worker[w].public_ip
+    for _, inst in aws_instance.k8s_worker : inst.tags.Name => inst.public_ip
   }
 }
 
 output "worker_private_dns" {
   value = {
-    for w in local.workers[var.workers_kind] : w => aws_instance.k8s-worker[w].private_dns
+    for _, inst in aws_instance.k8s_worker : inst.tags.Name => inst.private_dns
   }
 }

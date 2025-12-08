@@ -1,5 +1,5 @@
 resource "aws_vpc" "ic-k8slab" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   tags = {
     Name = "ic-k8slab"
@@ -104,7 +104,7 @@ resource "aws_security_group" "ic-k8slab-sg" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [aws_subnet.ic-k8slab-1a.cidr_block]
+    cidr_blocks = [aws_vpc.ic-k8slab.cidr_block]
   }
 
   egress {
@@ -118,5 +118,4 @@ resource "aws_security_group" "ic-k8slab-sg" {
     Name = "ic-k8slab"
   }
 }
-
 
