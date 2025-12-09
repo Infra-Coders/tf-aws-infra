@@ -67,6 +67,16 @@ resource "aws_instance" "k8s-master" {
     http_endpoint = "enabled"
   }
 
+  dynamic "instance_market_options" {
+    for_each = var.masters_spot_enabled ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        max_price = var.spot_options.max_price
+      }
+    }
+  }
+
   depends_on = [
     aws_subnet.ic-k8slab-1a,
     aws_internet_gateway.ic-k8slab-igw,
@@ -101,6 +111,16 @@ resource "aws_instance" "k8s-worker" {
   metadata_options {
     http_tokens   = "optional"
     http_endpoint = "enabled"
+  }
+
+  dynamic "instance_market_options" {
+    for_each = var.workers_spot_enabled ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        max_price = var.spot_options.max_price
+      }
+    }
   }
 
   depends_on = [

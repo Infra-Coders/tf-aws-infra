@@ -209,6 +209,12 @@ Do you want to perform these actions?
   Enter a value:
 
 ```
+### Spot vs On-Demand Instances
+- Default: workers launch as Spot; masters launch on-demand to keep the control plane stable.
+- To disable Spot for workers: `terraform plan -var 'workers_spot_enabled=false'`
+- To enable Spot for masters (opt-in, higher risk): `terraform plan -var 'masters_spot_enabled=true'`
+- Spot options (shared): `spot_options.max_price` (string, default `null` = on-demand price as maximum).
+
 ### BOOTSTRAP KUBE
 
 > Note: BOOTSTRAP Kube
