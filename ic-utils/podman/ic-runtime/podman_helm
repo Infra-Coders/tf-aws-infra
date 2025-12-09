@@ -1,7 +1,5 @@
 #!/bin/bash
 
-_KUBECONFIG=$(basename ${KUBECONFIG})
-
 if [[ "$OSTYPE" == "darwin"* ]]; then
   HELM_CONFIG="$HOME/Library/Preferences/helm"
   HELM_CACHE="$HOME/Library/Caches/helm"
@@ -17,10 +15,11 @@ mkdir -p "$HELM_CACHE/repository"
 mkdir -p "$HOME/.kube"
 
 podman run --rm -it \
+  --user=$(id -u):$(id -g) --userns=keep-id \
   -v "${PWD}:/podman" \
-  -e "KUBECONFIG=/root/.kube/${_KUBECONFIG}" \
-  -v "$HOME/.aws:/root/.aws" \
-  -v "$HOME/.kube:/root/.kube" \
-  -v "$HELM_CONFIG:/root/.config/helm" \
-  -v "$HELM_CACHE:/root/.cache/helm" \
+  -e "KUBECONFIG=${KUBECONFIG}" \
+  -v "$HOME/.aws:/home/${USER}/.aws:U" \
+  -v "$HOME/.kube:/home/${USER}/.kube:U" \
+  -v "$HELM_CONFIG:/home/${USER}/.config/helm:U" \
+  -v "$HELM_CACHE:/home/${USER}/.cache/helm:U" \
   ic-podman-runtime:latest helm "$@"

@@ -1,7 +1,8 @@
 #!/bin/bash
 
 podman run --rm -it -v ${PWD}:/podman \
-  -v ~/.aws:/root/.aws \
-  -v ~/.ssh:/root/.ssh \
-  -v ~/.kube:/root/.kube \
+  --user=$(id -u):$(id -g) --userns=keep-id \
+  -v ~/.aws:/home/${USER}/.aws:U \
+  -v ~/.ssh:/home/${USER}/.ssh:U \
+  -v ~/.kube:/home/${USER}/.kube:U \
   ic-podman-runtime:latest terraform "$@"

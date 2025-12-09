@@ -24,6 +24,12 @@ output "master_public_ip" {
   }
 }
 
+output "master_public_ip_to_host" {
+  value = {
+    for m in local.masters[var.masters_kind] : aws_instance.k8s-master[m].public_ip => m
+  }
+}
+
 output "master_private_dns" {
   value = {
     for w in local.masters[var.masters_kind] : w => aws_instance.k8s-master[w].private_dns
@@ -33,6 +39,12 @@ output "master_private_dns" {
 output "worker_public_ip" {
   value = {
     for w in local.workers[var.workers_kind] : w => aws_instance.k8s-worker[w].public_ip
+  }
+}
+
+output "worker_public_ip_to_host" {
+  value = {
+    for w in local.workers[var.workers_kind] : aws_instance.k8s-worker[w].public_ip => w
   }
 }
 

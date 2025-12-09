@@ -1,0 +1,8 @@
+- name: IC Ansible TEST Playbook
+  hosts: workers
+  gather_facts: true
+
+  tasks:
+
+    - name: Node test
+      shell: "uname -a"
