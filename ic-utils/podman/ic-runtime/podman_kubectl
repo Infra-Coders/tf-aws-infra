@@ -1,4 +1,8 @@
 #!/bin/bash
 
-_KUBECONFIG=$(basename ${KUBECONFIG})
-podman run --rm -it -v ${PWD}:/podman -e "KUBECONFIG=/root/.kube/${_KUBECONFIG}" -v ~/.aws:/root/.aws -v ~/.kube:/root/.kube ic-podman-runtime:latest kubectl "$@"
+podman run --rm -it -v ${PWD}:/podman \
+ --user=$(id -u):$(id -g) --userns=keep-id \
+ -e "KUBECONFIG=${KUBECONFIG}" \
+ -v ~/.aws:/home/${USER}/.aws:U \
+ -v ~/.kube:/home/${USER}/.kube:U \
+ ic-podman-runtime:latest kubectl "$@"

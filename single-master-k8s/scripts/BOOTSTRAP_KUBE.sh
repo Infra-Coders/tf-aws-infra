@@ -75,7 +75,6 @@ master=$(./scripts/parse_tf_output ./nodes/masters_public_ip.json | cut -d ":" -
 workers=$(./scripts/parse_tf_output ./nodes/workers_public_ip.json | cut -d ":" -f2)
 
 # STAGE NODE_BOOTSTRAP
-_remote_cmd="sudo cloud-init status --wait"
 run_STAGE "NODE_BOOTSTRAP" 240 ${master} ${workers}
 (( $? == 1 )) && exit 1
 
@@ -83,6 +82,11 @@ run_STAGE "NODE_BOOTSTRAP" 240 ${master} ${workers}
 run_STAGE "NODE_REBOOT" 60 ${master} ${workers}
 (( $? == 1 )) && exit 1
 sleep 60
+
+# STAGE NODE_READY
+run_STAGE "NODE_READY" 240 ${master} ${workers}
+(( $? == 1 )) && exit 1
+
 
 # STAGE CONTROL_PLANE_BOOTSTRAP
 run_STAGE "CONTROL_PLANE_BOOTSTRAP" 600 ${master}

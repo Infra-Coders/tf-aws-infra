@@ -3,3 +3,4 @@
 mkdir -p ./nodes
 terraform output -json | jq '."master_public_ip".value' > ./nodes/masters_public_ip.json
 terraform output -json | jq '."master_private_dns".value' > ./nodes/masters_private_dns.json
+terraform output -json | jq '."master_public_ip_to_host".value' > ./nodes/masters_public_ip_to_host.json

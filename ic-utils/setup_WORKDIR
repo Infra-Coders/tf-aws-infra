@@ -4,16 +4,40 @@ arch=$(arch)
 
 [[ "${arch}" == "x86_64" ]] && arch='amd64'
 
-# build images
-pushd $(pwd)
+[[ "$OSTYPE" == "darwin"* ]] && \
+  function envsubst() {
+    python3 -c 'import os,sys;[sys.stdout.write(os.path.expandvars(l)) for l in sys.stdin]'
+  }
 
+# Local user
+export USER_ID=$(id -u)
+export GROUP_ID=$(id -g)
+export USER_NAME=$(id -u -n)
+export GROUP_NAME=$(id -g -n)
+
+# IC Tools
+export ARCH=${arch}
+export KUBERNETES_VERSION=v1.32
+export TFVERSION=1.13.5
+
+pushd $(pwd)
+envsubst < ./podman/ic-runtime/Containerfile.${arch}.tmpl | sed -e 's/_var_/$/g' > ./podman/ic-runtime/_Containerfile.${arch}
 cd ./podman/ic-runtime && \
-  podman build --platform linux/${arch} -t ic-podman-runtime -f ./Containerfile.${arch} .  
+  podman build --platform linux/${arch} -t ic-podman-runtime -f ./_Containerfile.${arch} . \
+  && rm -f ./_Containerfile.${arch}
 popd
 
+# ANSIBLE
+export ARCH=${arch}
+export ANSIBLE_VERSION=2.15.13
+export ANSIBLE_RUNNER_VERSION=2.4.0
+export VIRTUAL_ENV=/home/${USER_NAME}/ansible
+
 pushd $(pwd)
+envsubst < ./podman/ansible/Containerfile.${arch}.tmpl | sed -e 's/_var_/$/g' > ./podman/ansible/_Containerfile.${arch}
 cd ./podman/ansible && \
-  podman build --platform linux/${arch} -t ic-podman-ansible -f ./Containerfile.${arch} .
+  podman build --platform linux/${arch} -t ic-podman-ansible -f ./_Containerfile.${arch} . \
+  && rm -f ./_Containerfile.${arch}
 popd
 
 mkdir -p ~/.kube
@@ -25,6 +49,7 @@ cp -v ${PWD}/podman/ic-runtime/podman_* ~/bin
 cp -v ${PWD}/podman/ansible/ansible_run ~/bin
 
 ssh-keygen -t rsa -b 4096  -f ~/.ssh/ic-k8slab -q -N ""
+echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null" > ~/.ssh/config
 mkdir -p ../single-master-k8s/ssh
 cp -v ~/.ssh/ic-k8slab.pub ../single-master-k8s/ssh
 chmod 600 ../single-master-k8s/ssh/ic-k8slab.pub

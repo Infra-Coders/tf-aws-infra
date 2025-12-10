@@ -1,0 +1,23 @@
+FROM docker.io/arm64v8/ubuntu:devel
+
+ARG ARCH=arm64
+
+ENV ANSIBLE_VERSION=2.15.13
+ENV ANSIBLE_RUNNER_VERSION=2.4.0
+
+RUN id -u ${USER_ID} 2>/dev/null && userdel -f $(id -u ${USER_ID} -n) || echo "NO USER=${USER_ID}"
+RUN getent group ${GROUP_ID} 2>/dev/null || groupadd -g ${GROUP_ID} ${GROUP_NAME}
+RUN useradd -o -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash ${USER_NAME}
+RUN test "${HOME}" = "/home/${USER_NAME}" || (mkdir -p $(dirname ${HOME}) && ln -s /home/${USER_NAME} "$(dirname ${HOME})/${USER_NAME}")
+
+RUN apt update && apt install -y python3 python3-pip python3-full software-properties-common jq yq openssh-client
+USER ${USER_NAME}
+ENV VIRTUAL_ENV=/home/${USER_NAME}/ansible
+RUN mkdir -p ${VIRTUAL_ENV}
+RUN python3 -m venv ${VIRTUAL_ENV} && . ${VIRTUAL_ENV}/bin/activate && \ 
+    python3 -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org \
+    ansible-core==${ANSIBLE_VERSION} ansible-runner==${ANSIBLE_RUNNER_VERSION} kubernetes jmespath urllib3 Jinja2 && \
+    ansible-galaxy collection install ansible.posix community.general community.docker kubernetes.core amazon.aws
+
+ENV PATH="$VIRTUAL_ENV/bin:_var_PATH"
+WORKDIR /podman

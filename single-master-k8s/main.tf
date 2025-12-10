@@ -9,8 +9,8 @@ resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
   http_put_response_hop_limit = 3
 }
 
-resource "aws_iam_role" "ic-aws-ebs-csi-role-ec2" {
-  name = "ic-aws-ebs-csi-role-ec2"
+resource "aws_iam_role" "ic-aws-csi-role-ec2" {
+  name = "ic-aws-csi-role-ec2"
 
   assume_role_policy = <<EOF
 {
@@ -30,13 +30,18 @@ EOF
 }
 
 resource "aws_iam_role_policy_attachment" "ic-aws-ebs-csi-role-ec2" {
-  role       = aws_iam_role.ic-aws-ebs-csi-role-ec2.name
+  role       = aws_iam_role.ic-aws-csi-role-ec2.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-resource "aws_iam_instance_profile" "ic-aws-ebs-csi-ec2" {
-  name = "ic-aws-ebs-csi-ec2"
-  role = aws_iam_role.ic-aws-ebs-csi-role-ec2.name
+resource "aws_iam_role_policy_attachment" "ic-aws-efs-csi-role-ec2" {
+  role       = aws_iam_role.ic-aws-csi-role-ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
+}
+
+resource "aws_iam_instance_profile" "ic-aws-csi-ec2" {
+  name = "ic-aws-csi-ec2"
+  role = aws_iam_role.ic-aws-csi-role-ec2.name
 }
 
 resource "aws_instance" "k8s-master" {
@@ -44,7 +49,7 @@ resource "aws_instance" "k8s-master" {
   for_each = toset(local.masters[var.masters_kind])
 
   # bind role
-  iam_instance_profile = aws_iam_instance_profile.ic-aws-ebs-csi-ec2.name
+  iam_instance_profile = aws_iam_instance_profile.ic-aws-csi-ec2.name
   instance_type = local.instance_type[var.masters_kind]
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
@@ -89,7 +94,7 @@ resource "aws_instance" "k8s-worker" {
 
   for_each = toset(local.workers[var.workers_kind])
   # bind role
-  iam_instance_profile = aws_iam_instance_profile.ic-aws-ebs-csi-ec2.name
+  iam_instance_profile = aws_iam_instance_profile.ic-aws-csi-ec2.name
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
