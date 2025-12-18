@@ -49,7 +49,7 @@ resource "aws_instance" "k8s-master" {
   for_each = toset(local.masters[var.masters_kind])
 
   # bind role
-  iam_instance_profile = aws_iam_instance_profile.ic-aws-csi-ec2.name
+  iam_instance_profile = aws_iam_instance_profile.k8s_control_plane_profile.name
   instance_type = local.instance_type[var.masters_kind]
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
@@ -59,7 +59,9 @@ resource "aws_instance" "k8s-master" {
   key_name                    = aws_key_pair.ic-k8slab.key_name
 
   tags = {
-    Name = each.value
+    Name                                        = each.value
+    "kubernetes.io/cluster/ic-k8slab"           = "owned"
+    "k8s.io/role/master"                        = "1"
   }
 
   root_block_device {
@@ -94,7 +96,7 @@ resource "aws_instance" "k8s-worker" {
 
   for_each = toset(local.workers[var.workers_kind])
   # bind role
-  iam_instance_profile = aws_iam_instance_profile.ic-aws-csi-ec2.name
+  iam_instance_profile = aws_iam_instance_profile.k8s_worker_profile.name
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
@@ -103,7 +105,9 @@ resource "aws_instance" "k8s-worker" {
   key_name                    = aws_key_pair.ic-k8slab.key_name
 
   tags = {
-    Name = each.value
+    Name                                        = each.value
+    "kubernetes.io/cluster/ic-k8slab"           = "owned"
+    "k8s.io/role/node"                          = "1"
   }
 
   instance_type = local.instance_type[var.workers_kind]

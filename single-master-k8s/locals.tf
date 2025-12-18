@@ -8,10 +8,10 @@ locals {
   cloud_init_user_data_base64 = base64encode(local.cloud_init_user_data)
 
   instance_type = {
-    workers1 = "t2.medium"
-    workers3 = "t2.medium"
-    workers5 = "t2.micro"
-    masters1 = "t2.medium"
+    workers1 = "t3.small"
+    workers3 = "t3.small"
+    workers5 = "t3.micro"
+    masters1 = "t3.small"
   }
 
   masters = {

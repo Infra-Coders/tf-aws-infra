@@ -12,6 +12,7 @@ STAGE_CMD['NODE_REBOOT']="sudo shutdown -r now"
 STAGE_CMD['NODE_READY']="uname -n"
 STAGE_CMD['CONTROL_PLANE_BOOTSTRAP']="sudo sh /root/scripts/k8s-init.sh"
 STAGE_CMD['CNI_BOOTSTRAP']="sudo sh /root/scripts/${CNI_ENGINE:-calico}-bootstrap.sh"
+STAGE_CMD['AWS_CLOUD_PROVIDER_BOOTSTRAP']="sudo sh /root/scripts/aws-cloud-provider-bootstrap.sh"
 STAGE_CMD['KUBE_READY']="sudo bash /root/scripts/k8s-ready.sh"
 STAGE_CMD['GET_WORKER_CMD_JOIN']="sudo kubeadm token create --print-join-command"
 STAGE_CMD['GET_KUBECONFIG']="sudo cat /etc/kubernetes/admin.conf"
@@ -94,6 +95,10 @@ run_STAGE "CONTROL_PLANE_BOOTSTRAP" 600 ${master}
 
 # STAGE CNI_BOOTSTRAP
 run_STAGE "CNI_BOOTSTRAP" 240 ${master}
+(( $? == 1 )) && exit 1
+
+# STAGE AWS_CLOUD_PROVIDER_BOOTSTRAP
+run_STAGE "AWS_CLOUD_PROVIDER_BOOTSTRAP" 240 ${master}
 (( $? == 1 )) && exit 1
 
 # CMD GET_WORKER_CMD_JOIN
