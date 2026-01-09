@@ -187,34 +187,6 @@ write_files:
       kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.1/manifests/custom-resources-bpf.yaml
       kubectl patch installation default --type=merge -p '{"spec": {"calicoNetwork": {"ipPools": [{"cidr": "10.244.0.0/16"}]}}}'
 
-  - path: /root/scripts/aws-cloud-provider-bootstrap.sh
-    permissions: "0755"
-    content: |
-      #!/bin/bash
-
-      export KUBECONFIG=/etc/kubernetes/admin.conf
-
-      # Add AWS Cloud Provider Helm repository
-      helm repo add aws-cloud-controller-manager https://kubernetes.github.io/cloud-provider-aws 2>/dev/null || true
-      helm repo update
-
-      # Install AWS Cloud Provider
-      helm install aws-cloud-controller-manager aws-cloud-controller-manager/aws-cloud-controller-manager \
-        --namespace kube-system \
-        --set clusterName=ic-k8slab \
-        --set nodeSelector.node-role\\.kubernetes\\.io/control-plane= \
-        --set tolerations[0].key=node-role.kubernetes.io/control-plane \
-        --set tolerations[0].operator=Exists \
-        --set tolerations[0].effect=NoSchedule \
-        --set tolerations[1].key=node.cloudprovider.kubernetes.io/uninitialized \
-        --set tolerations[1].operator=Exists \
-        --set tolerations[1].effect=NoSchedule \
-        --set args[0]=--v=2 \
-        --set args[1]=--cloud-provider=aws \
-        --set args[2]=--configure-cloud-routes=false
-
-      echo "AWS Cloud Provider deployed successfully"
-
   - path: /etc/modules-load.d/kubernetes.conf
     content: |
       br_netfilter

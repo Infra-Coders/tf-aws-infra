@@ -14,7 +14,7 @@ resource "aws_subnet" "ic-k8slab-1a" {
   tags = {
     Name                                      = "ic-k8slab-1a"
     "kubernetes.io/cluster/ic-k8slab"         = "owned"
-    "kubernetes.io/role/internal-elb"         = "1"
+    "kubernetes.io/role/elb"                  = "1"
   }
 }
 
@@ -25,7 +25,7 @@ resource "aws_subnet" "ic-k8slab-1b" {
   tags = {
     Name                                      = "ic-k8slab-1b"
     "kubernetes.io/cluster/ic-k8slab"         = "owned"
-    "kubernetes.io/role/internal-elb"         = "1"
+    "kubernetes.io/role/elb"                  = "1"
   }
 }
 
@@ -36,7 +36,7 @@ resource "aws_subnet" "ic-k8slab-1c" {
   tags = {
     Name                                      = "ic-k8slab-1c"
     "kubernetes.io/cluster/ic-k8slab"         = "owned"
-    "kubernetes.io/role/internal-elb"         = "1"
+    "kubernetes.io/role/elb"                  = "1"
   }
 }
 

@@ -315,6 +315,25 @@ ip-10-0-11-214   Ready    worker          87s    v1.32.10
 
 ```
 
+### Deploy AWS Cloud Provider
+
+The AWS Cloud Provider is automatically deployed at the end of the `BOOTSTRAP_KUBE.sh` process using `podman_helm` locally.
+
+**Note**: The AWS Cloud Provider is deployed locally (not on control plane) to follow best practices:
+- Better security isolation
+- No resource consumption on control plane nodes
+- Local deployment history tracking
+- Version control friendly configurations
+
+If you need to redeploy it manually:
+```bash
+# Set KUBECONFIG (from BOOTSTRAP_KUBE output)
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy AWS Cloud Provider
+podman_run ./scripts/deploy-aws-cloud-provider.sh
+```
+
 ### Test AWS Cloud Provider
 ```bash
 # Deploy test nginx with LoadBalancer
@@ -327,10 +346,10 @@ podman_kubectl get svc nginx -w
 
 ### Cleanup
 ```bash
-# 1. Delete all LoadBalancer services (this removes AWS ELBs)
-podman_kubectl delete svc --all-namespaces --field-selector spec.type=LoadBalancer
+# 1. Delete the nginx service (this removes the AWS ELB)
+podman_kubectl delete svc nginx
 
-# 2. Wait 2-3 minutes for AWS to clean up resources
+# 2. Wait 2-3 minutes for AWS to clean up the LoadBalancer
 sleep 120
 
 # 3. Delete the deployment

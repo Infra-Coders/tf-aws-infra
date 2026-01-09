@@ -9,40 +9,6 @@ resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
   http_put_response_hop_limit = 3
 }
 
-resource "aws_iam_role" "ic-aws-csi-role-ec2" {
-  name = "ic-aws-csi-role-ec2"
-
-  assume_role_policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
-
-}
-
-resource "aws_iam_role_policy_attachment" "ic-aws-ebs-csi-role-ec2" {
-  role       = aws_iam_role.ic-aws-csi-role-ec2.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-}
-
-resource "aws_iam_role_policy_attachment" "ic-aws-efs-csi-role-ec2" {
-  role       = aws_iam_role.ic-aws-csi-role-ec2.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
-}
-
-resource "aws_iam_instance_profile" "ic-aws-csi-ec2" {
-  name = "ic-aws-csi-ec2"
-  role = aws_iam_role.ic-aws-csi-role-ec2.name
-}
 
 resource "aws_instance" "k8s-master" {
   ami      = data.aws_ami.ubuntu.id
