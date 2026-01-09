@@ -9,48 +9,13 @@ resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
   http_put_response_hop_limit = 3
 }
 
-resource "aws_iam_role" "ic-aws-csi-role-ec2" {
-  name = "ic-aws-csi-role-ec2"
-
-  assume_role_policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
-
-}
-
-resource "aws_iam_role_policy_attachment" "ic-aws-ebs-csi-role-ec2" {
-  role       = aws_iam_role.ic-aws-csi-role-ec2.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-}
-
-resource "aws_iam_role_policy_attachment" "ic-aws-efs-csi-role-ec2" {
-  role       = aws_iam_role.ic-aws-csi-role-ec2.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
-}
-
-resource "aws_iam_instance_profile" "ic-aws-csi-ec2" {
-  name = "ic-aws-csi-ec2"
-  role = aws_iam_role.ic-aws-csi-role-ec2.name
-}
-
 resource "aws_instance" "k8s-master" {
   ami      = data.aws_ami.ubuntu.id
   for_each = toset(local.masters[var.masters_kind])
 
   # bind role
   iam_instance_profile = aws_iam_instance_profile.k8s_control_plane_profile.name
-  instance_type = local.instance_type[var.masters_kind]
+  instance_type        = local.instance_type_spec[var.instance_type][var.masters_kind]
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]
@@ -59,9 +24,9 @@ resource "aws_instance" "k8s-master" {
   key_name                    = aws_key_pair.ic-k8slab.key_name
 
   tags = {
-    Name                                        = each.value
-    "kubernetes.io/cluster/ic-k8slab"           = "owned"
-    "k8s.io/role/master"                        = "1"
+    Name                              = each.value
+    "kubernetes.io/cluster/ic-k8slab" = "owned"
+    "k8s.io/role/master"              = "1"
   }
 
   root_block_device {
@@ -105,12 +70,12 @@ resource "aws_instance" "k8s-worker" {
   key_name                    = aws_key_pair.ic-k8slab.key_name
 
   tags = {
-    Name                                        = each.value
-    "kubernetes.io/cluster/ic-k8slab"           = "owned"
-    "k8s.io/role/node"                          = "1"
+    Name                              = each.value
+    "kubernetes.io/cluster/ic-k8slab" = "owned"
+    "k8s.io/role/node"                = "1"
   }
 
-  instance_type = local.instance_type[var.workers_kind]
+  instance_type = local.instance_type_spec[var.instance_type][var.workers_kind]
 
   root_block_device {
     volume_size = 30
