@@ -16,6 +16,11 @@ variable "masters_spot_enabled" {
   default = false
 }
 
+variable "instance_type" {
+  type = string
+  default = "free"
+}
+
 variable "spot_options" {
   type = object({
     max_price = string

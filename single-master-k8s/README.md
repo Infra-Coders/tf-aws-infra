@@ -13,6 +13,11 @@
 [calico customize](https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/config-options)<br>
 #### AWS VPC CNI
 [amazon-vpc-cni-k8s](https://github.com/aws/amazon-vpc-cni-k8s)
+
+#### AWS Cloud Provider
+[cloud-provider-aws](https://github.com/kubernetes/cloud-provider-aws)
+[aws-load-balancer-controller](https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html)
+
 #### Flux
 [flux](https://spacelift.io/blog/fluxcd)<br>
 [flux install](https://fluxcd.io/flux/installation/)<br>
@@ -23,10 +28,10 @@
 ```
 > cat ~/.aws/credentials
 > aws configure --profile <your_profile>
-AWS Access Key ID [****************PTVK]:              
-AWS Secret Access Key [****************deH7]: 
-Default region name [eu-central-1]: 
-Default output format [json]: 
+AWS Access Key ID [****************PTVK]:
+AWS Secret Access Key [****************deH7]:
+Default region name [eu-central-1]:
+Default output format [json]:
 ```
 
 > Note: Check connection to AWS, using your AWS account
@@ -72,7 +77,44 @@ Overwrite (y/n)?
 ```
 
 
-### Provisioning Infra
+### Quick Start - Complete Deployment
+
+Deploy the entire cluster:
+
+```bash
+cd tf-aws-infra/single-master-k8s
+
+# Initialize Terraform
+podman_terraform init
+
+# Apply Terraform to create infrastructure
+podman_terraform apply
+
+# Bootstrap Kubernetes cluster
+podman_run ./scripts/BOOTSTRAP_KUBE.sh
+```
+
+This will:
+1. Create AWS infrastructure (VPC, subnets, EC2 instances, IAM roles)
+2. Bootstrap Kubernetes cluster with kubeadm
+3. Deploy Calico CNI
+4. Deploy AWS Cloud Controller Manager
+5. **Automatically set ProviderID on all nodes** via kubeadm configuration
+   - Master node: ProviderID set in kubeadm InitConfiguration
+   - Worker nodes: ProviderID added to kubeadm join command
+6. Configure kubectl access
+
+After deployment completes:
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+podman_kubectl get nodes -o custom-columns=NAME:.metadata.name,PROVIDER-ID:.spec.providerID
+```
+
+**Note:** ProviderID is now automatically configured during node initialization using EC2 metadata service (`169.254.169.254`). No manual patching required.
+
+### Manual Deployment Steps
+
+If you prefer to run each step manually:
 
 > Note: Terraform INIT
 ```
@@ -147,7 +189,7 @@ Changes to Outputs:
 
 > Note: Terraform APPLY
 ```
-> terraform apply
+> podman_terraform apply
 
 podman_terraform apply
 data.aws_ami.ubuntu: Reading...
@@ -303,9 +345,201 @@ export KUBECONFIG=~/.kube/aws-k8s
 > Note: Enjoy new Kube cluster
 
 ```
-> kubectl get node
+> podman_kubectl get node
 NAME             STATUS   ROLES           AGE    VERSION
 ip-10-0-1-83     Ready    control-plane   100s   v1.32.10
 ip-10-0-11-214   Ready    worker          87s    v1.32.10
 
 ```
+
+### Deploy AWS Cloud Provider
+
+The AWS Cloud Provider is automatically deployed at the end of the `BOOTSTRAP_KUBE.sh` process using `podman_helm` locally.
+
+**What happens automatically:**
+1. **ProviderID is set during node initialization** via kubeadm configuration
+   - Master node: `provider-id` set in kubeadm InitConfiguration (`kubeletExtraArgs`)
+   - Worker nodes: `provider-id` set in kubeadm JoinConfiguration via `create-join-config.sh`
+   - Each node queries EC2 metadata service for instance-id and availability-zone
+   - Format: `aws:///availability-zone/instance-id`
+2. AWS Cloud Controller Manager is deployed with correct cluster name
+3. Nodes are automatically registered for LoadBalancer target management
+
+**Note**: The AWS Cloud Provider is deployed locally (not on control plane) to follow best practices:
+- Better security isolation
+- No resource consumption on control plane nodes
+- Local deployment history tracking
+- Version control friendly configurations
+
+If you need to redeploy it manually:
+```bash
+# Set KUBECONFIG (from BOOTSTRAP_KUBE output)
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy AWS Cloud Provider
+podman_run ./scripts/deploy-aws-cloud-provider.sh
+```
+
+### Deploy Ingress NGINX (Recommended for Cost Efficiency)
+
+**Cost Optimization**: Instead of creating one LoadBalancer per application, use a single NLB with Ingress NGINX for HTTP/HTTPS routing to multiple applications.
+
+**Architecture:**
+```
+Client → AWS NLB (TCP/443,80) → NodePort → ingress-nginx → HTTP routing → App Services → App Pods
+```
+
+**Benefits:**
+- Single NLB for all HTTP/HTTPS traffic
+- TLS termination at ingress level
+- Path-based and host-based routing
+- Centralized certificate management
+
+#### Deploy Ingress NGINX Controller
+
+```bash
+# Set KUBECONFIG
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy Ingress NGINX with NLB
+podman_run ./scripts/deploy-ingress-nginx.sh
+
+# Get NLB hostname
+podman_kubectl get svc ingress-nginx-controller -n ingress-nginx
+```
+
+#### Deploy Example Application with Ingress
+
+```bash
+# Deploy example app (uses ClusterIP service + Ingress)
+podman_kubectl apply -f manifests/example-app.yaml
+
+# Check ingress
+podman_kubectl get ingress
+
+# Test access (replace with your NLB hostname)
+curl -H "Host: demo.luke.infra-coders.com" http://<NLB-HOSTNAME>
+```
+
+#### Add More Applications
+
+For each new application, create:
+1. **Deployment** - Your application pods
+2. **Service** - Type: ClusterIP (not LoadBalancer!)
+3. **Ingress** - HTTP routing rules
+
+Example:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app-service
+            port:
+              number: 80
+```
+
+### Test AWS Cloud Provider (Direct LoadBalancer)
+
+**Note**: This creates a separate LoadBalancer per service. Use Ingress NGINX instead for cost efficiency.
+
+```bash
+# Deploy test nginx with LoadBalancer
+podman_kubectl create deployment nginx --image=nginx
+podman_kubectl expose deployment nginx --port=80 --type=LoadBalancer
+
+# Get LoadBalancer URL
+podman_kubectl get svc nginx -w
+```
+
+## Cleanup
+
+### Remove Ingress NGINX (if deployed)
+
+To remove only the ingress-nginx namespace and its NLB:
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# 1. Delete all Ingress resources in default namespace
+podman_kubectl delete ingress --all -n default
+
+# 2. Delete example applications
+podman_kubectl delete -f manifests/example-app.yaml
+
+# 3. Uninstall Ingress NGINX (removes NLB)
+podman_helm uninstall ingress-nginx -n ingress-nginx
+
+# 4. Delete the namespace
+podman_kubectl delete namespace ingress-nginx
+
+# 5. Wait for AWS to clean up the NLB (2-3 minutes)
+sleep 180
+```
+
+### Destroy Complete Infrastructure
+
+**IMPORTANT**: Delete all LoadBalancer services first to avoid orphaned AWS resources.
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# 1. Delete Ingress NGINX (if deployed) - see above
+
+# 2. Delete any other LoadBalancer services you created
+podman_kubectl get svc --all-namespaces -o wide | grep LoadBalancer
+# Delete each LoadBalancer service individually:
+podman_kubectl delete svc <service-name> -n <namespace>
+
+# 3. Wait for AWS to clean up all LoadBalancers (3 minutes)
+sleep 180
+
+# 4. Verify no LoadBalancers remain in your VPC
+VPC_ID=$(podman_terraform output -raw vpc_id)
+aws elbv2 describe-load-balancers --region eu-central-1 \
+  --query "LoadBalancers[?VpcId=='$VPC_ID']"
+
+# 5. Destroy Terraform infrastructure
+podman_terraform destroy -auto-approve
+
+# Note: If you get AWS credential errors, use -refresh=false to skip state refresh
+```
+
+### Troubleshooting: Terraform Destroy Fails
+
+If `terraform destroy` fails with "DependencyViolation", LoadBalancers still exist:
+
+```bash
+# List remaining LoadBalancers
+VPC_ID=$(podman_terraform output -raw vpc_id)
+aws elbv2 describe-load-balancers --region eu-central-1 \
+  --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
+  --output text
+
+# Manually delete each LoadBalancer
+aws elbv2 delete-load-balancer --region eu-central-1 \
+  --load-balancer-arn <ARN-from-above>
+
+# Wait and retry
+sleep 120
+podman_terraform destroy
+```
+
+### AWS Cloud Provider Issues
+If LoadBalancers are not being created:
+- Verify IAM roles have correct permissions
+- Check cloud controller manager logs:
+  ```bash
+  kubectl logs -n kube-system -l k8s-app=aws-cloud-controller-manager
+  ```
