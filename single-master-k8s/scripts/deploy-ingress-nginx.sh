@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -e
+
+export KUBECONFIG=~/.kube/aws-k8s
+
+echo "Deploying Ingress NGINX Controller..."
+
+# Verify cluster connectivity
+echo "Verifying cluster connectivity..."
+if ! kubectl cluster-info &>/dev/null; then
+    echo "Error: Cannot connect to Kubernetes cluster"
+    echo "Please verify KUBECONFIG is correct: $KUBECONFIG"
+    exit 1
+fi
+
+# Add Ingress NGINX Helm repository
+echo "Adding Ingress NGINX Helm repository..."
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
+helm repo update
+
+# Create namespace
+echo "Creating ingress-nginx namespace..."
+kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
+
+# Check if already installed
+if helm list -n ingress-nginx | grep -q ingress-nginx; then
+    echo "Ingress NGINX is already installed. Upgrading..."
+    helm upgrade ingress-nginx ingress-nginx/ingress-nginx \
+      --namespace ingress-nginx \
+      --values manifests/ingress-nginx-values.yaml
+else
+    # Install Ingress NGINX
+    echo "Installing Ingress NGINX..."
+    helm install ingress-nginx ingress-nginx/ingress-nginx \
+      --namespace ingress-nginx \
+      --values manifests/ingress-nginx-values.yaml
+fi
+
+echo "Ingress NGINX deployed successfully!"
+
+# Wait for LoadBalancer to be provisioned
+echo "Waiting for LoadBalancer to be provisioned..."
+for i in {1..60}; do
+    LB_HOSTNAME=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+    if [ -n "$LB_HOSTNAME" ]; then
+        echo "LoadBalancer provisioned!"
+        echo "NLB Hostname: $LB_HOSTNAME"
+        break
+    fi
+    echo "Waiting for LoadBalancer... ($i/60)"
+    sleep 5
+done
+
+# Verify deployment
+echo "Verifying deployment..."
+kubectl get pods -n ingress-nginx
+kubectl get svc -n ingress-nginx
+
+echo ""
+echo "=========================================="
+echo "Ingress NGINX Controller is ready!"
+echo "NLB Hostname: $LB_HOSTNAME"
+echo "=========================================="
