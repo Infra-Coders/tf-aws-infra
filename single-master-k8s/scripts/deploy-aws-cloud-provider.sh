@@ -24,39 +24,21 @@ echo "Adding AWS Cloud Provider Helm repository..."
 helm repo add aws-cloud-controller-manager https://kubernetes.github.io/cloud-provider-aws 2>/dev/null || true
 helm repo update
 
-# Check if already installed
-if helm list -n kube-system | grep -q aws-cloud-controller-manager; then
-    echo "AWS Cloud Provider is already installed. Upgrading..."
-    helm upgrade aws-cloud-controller-manager aws-cloud-controller-manager/aws-cloud-controller-manager \
-      --namespace kube-system \
-      --set clusterName=ic-k8slab \
-      --set nodeSelector."node-role\.kubernetes\.io/control-plane"="" \
-      --set tolerations[0].key=node-role.kubernetes.io/control-plane \
-      --set tolerations[0].operator=Exists \
-      --set tolerations[0].effect=NoSchedule \
-      --set tolerations[1].key=node.cloudprovider.kubernetes.io/uninitialized \
-      --set tolerations[1].operator=Exists \
-      --set tolerations[1].effect=NoSchedule \
-      --set args[0]=--v=2 \
-      --set args[1]=--cloud-provider=aws \
-      --set args[2]=--configure-cloud-routes=false
-else
-    # Install AWS Cloud Provider
-    echo "Installing AWS Cloud Provider..."
-    helm install aws-cloud-controller-manager aws-cloud-controller-manager/aws-cloud-controller-manager \
-      --namespace kube-system \
-      --set clusterName=ic-k8slab \
-      --set nodeSelector."node-role\.kubernetes\.io/control-plane"="" \
-      --set tolerations[0].key=node-role.kubernetes.io/control-plane \
-      --set tolerations[0].operator=Exists \
-      --set tolerations[0].effect=NoSchedule \
-      --set tolerations[1].key=node.cloudprovider.kubernetes.io/uninitialized \
-      --set tolerations[1].operator=Exists \
-      --set tolerations[1].effect=NoSchedule \
-      --set args[0]=--v=2 \
-      --set args[1]=--cloud-provider=aws \
-      --set args[2]=--configure-cloud-routes=false
-fi
+# Install or upgrade AWS Cloud Provider
+echo "Installing/Upgrading AWS Cloud Provider..."
+helm upgrade --install aws-cloud-controller-manager aws-cloud-controller-manager/aws-cloud-controller-manager \
+  --namespace kube-system \
+  --set clusterName=ic-k8slab \
+  --set nodeSelector."node-role\.kubernetes\.io/control-plane"="" \
+  --set tolerations[0].key=node-role.kubernetes.io/control-plane \
+  --set tolerations[0].operator=Exists \
+  --set tolerations[0].effect=NoSchedule \
+  --set tolerations[1].key=node.cloudprovider.kubernetes.io/uninitialized \
+  --set tolerations[1].operator=Exists \
+  --set tolerations[1].effect=NoSchedule \
+  --set args[0]=--v=2 \
+  --set args[1]=--cloud-provider=aws \
+  --set args[2]=--configure-cloud-routes=false
 
 echo "AWS Cloud Provider deployed successfully!"
 
