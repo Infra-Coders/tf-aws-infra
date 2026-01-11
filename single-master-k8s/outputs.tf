@@ -53,3 +53,7 @@ output "worker_private_dns" {
     for w in local.workers[var.workers_kind] : w => aws_instance.k8s-worker[w].private_dns
   }
 }
+
+output "vpc_id" {
+  value = aws_vpc.ic-k8slab.id
+}
