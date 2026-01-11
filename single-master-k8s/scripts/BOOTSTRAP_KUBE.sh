@@ -21,7 +21,7 @@ CMD_RESULT=''
 run_CMD() {
   local cmd=${1}
   local cmd_timeout=${2}
-  local node=${3} 
+  local node=${3}
   local sshcmd="aws_get -o ConnectionAttempts=${cmd_timeout}"
   local sshcmd_run="timeout --signal=INT ${cmd_timeout} ${sshcmd}"
 
@@ -96,6 +96,7 @@ run_STAGE "CONTROL_PLANE_BOOTSTRAP" 600 ${master}
 run_STAGE "CNI_BOOTSTRAP" 240 ${master}
 (( $? == 1 )) && exit 1
 
+
 # CMD GET_WORKER_CMD_JOIN
 run_CMD "GET_WORKER_CMD_JOIN" 60 ${master}
 (( $? == 1 )) && exit 1
@@ -107,7 +108,7 @@ STAGE_CMD['DATA_PLANE_BOOTSTRAP']="sudo ${worker_join_cmd}"
 run_STAGE "DATA_PLANE_BOOTSTRAP" 600 ${workers}
 (( $? == 1 )) && exit 1
 
-# STAGE KUBE_READY 
+# STAGE KUBE_READY
 run_STAGE "KUBE_READY" 300 ${master}
 (( $? == 1 )) && exit 1
 
@@ -121,6 +122,27 @@ export KUBECONFIG=~/.kube/aws-k8s
 
 echo "Add Workers labels"
 ./scripts/label_all_workers
+
+# Wait for API server to be fully stable
+echo "Waiting for API server to stabilize..."
+sleep 10
+for i in {1..30}; do
+  if kubectl get nodes &>/dev/null; then
+    echo "API server is ready"
+    break
+  fi
+  echo "Waiting for API server... ($i/30)"
+  sleep 10
+done
+
+# Deploy AWS Cloud Provider locally
+echo "Deploying AWS Cloud Provider locally..."
+export KUBECONFIG=~/.kube/aws-k8s
+./scripts/deploy-aws-cloud-provider.sh || {
+  echo "Warning: AWS Cloud Provider deployment failed. You can retry manually with:"
+  echo "  export KUBECONFIG=~/.kube/aws-k8s"
+  echo "  ./scripts/deploy-aws-cloud-provider.sh"
+}
 
 printf "%0.s*" {1..80}
 echo

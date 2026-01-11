@@ -13,6 +13,11 @@
 [calico customize](https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/config-options)<br>
 #### AWS VPC CNI
 [amazon-vpc-cni-k8s](https://github.com/aws/amazon-vpc-cni-k8s)
+
+#### AWS Cloud Provider
+[cloud-provider-aws](https://github.com/kubernetes/cloud-provider-aws)
+[aws-load-balancer-controller](https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html)
+
 #### Flux
 [flux](https://spacelift.io/blog/fluxcd)<br>
 [flux install](https://fluxcd.io/flux/installation/)<br>
@@ -23,10 +28,10 @@
 ```
 > cat ~/.aws/credentials
 > aws configure --profile <your_profile>
-AWS Access Key ID [****************PTVK]:              
-AWS Secret Access Key [****************deH7]: 
-Default region name [eu-central-1]: 
-Default output format [json]: 
+AWS Access Key ID [****************PTVK]:
+AWS Secret Access Key [****************deH7]:
+Default region name [eu-central-1]:
+Default output format [json]:
 ```
 
 > Note: Check connection to AWS, using your AWS account
@@ -147,7 +152,7 @@ Changes to Outputs:
 
 > Note: Terraform APPLY
 ```
-> terraform apply
+> podman_terraform apply
 
 podman_terraform apply
 data.aws_ami.ubuntu: Reading...
@@ -303,9 +308,61 @@ export KUBECONFIG=~/.kube/aws-k8s
 > Note: Enjoy new Kube cluster
 
 ```
-> kubectl get node
+> podman_kubectl get node
 NAME             STATUS   ROLES           AGE    VERSION
 ip-10-0-1-83     Ready    control-plane   100s   v1.32.10
 ip-10-0-11-214   Ready    worker          87s    v1.32.10
 
 ```
+
+### Deploy AWS Cloud Provider
+
+The AWS Cloud Provider is automatically deployed at the end of the `BOOTSTRAP_KUBE.sh` process using `podman_helm` locally.
+
+**Note**: The AWS Cloud Provider is deployed locally (not on control plane) to follow best practices:
+- Better security isolation
+- No resource consumption on control plane nodes
+- Local deployment history tracking
+- Version control friendly configurations
+
+If you need to redeploy it manually:
+```bash
+# Set KUBECONFIG (from BOOTSTRAP_KUBE output)
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy AWS Cloud Provider
+podman_run ./scripts/deploy-aws-cloud-provider.sh
+```
+
+### Test AWS Cloud Provider
+```bash
+# Deploy test nginx with LoadBalancer
+podman_kubectl create deployment nginx --image=nginx
+podman_kubectl expose deployment nginx --port=80 --type=LoadBalancer
+
+# Get LoadBalancer URL
+podman_kubectl get svc nginx -w
+```
+
+### Cleanup
+```bash
+# 1. Delete the nginx service (this removes the AWS ELB)
+podman_kubectl delete svc nginx
+
+# 2. Wait 2-3 minutes for AWS to clean up the LoadBalancer
+sleep 120
+
+# 3. Delete the deployment
+podman_kubectl delete deployment nginx
+
+# 4. Destroy infrastructure
+podman_terraform destroy
+```
+
+### AWS Cloud Provider Issues
+If LoadBalancers are not being created:
+- Verify IAM roles have correct permissions
+- Check cloud controller manager logs:
+  ```bash
+  kubectl logs -n kube-system -l k8s-app=aws-cloud-controller-manager
+  ```

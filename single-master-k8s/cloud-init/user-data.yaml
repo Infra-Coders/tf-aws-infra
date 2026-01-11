@@ -8,7 +8,7 @@ users:
     ssh_import_id:
     lock_passwd: false
     ssh_authorized_keys:
-      - '${k8sadmin_ssh_key}'
+      - "${k8sadmin_ssh_key}"
 write_files:
   - path: /root/scripts/check_cloud_init
     permissions: "0755"
@@ -22,7 +22,7 @@ write_files:
     permissions: "0755"
     content: |
       #!/bin/bash
- 
+
       sudo apt-get update
       sudo apt-get upgrade -y
       sudo apt-get install -y apt-transport-https ca-certificates curl gpg
