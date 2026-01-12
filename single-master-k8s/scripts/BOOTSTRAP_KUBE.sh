@@ -144,6 +144,11 @@ export KUBECONFIG=~/.kube/aws-k8s
   echo "  ./scripts/deploy-aws-cloud-provider.sh"
 }
 
+# Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues for cert-manager)
+echo "Patching CoreDNS to use Google DNS..."
+kubectl apply -f manifests/coredns-patch.yaml 2>/dev/null || true
+kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+
 printf "%0.s*" {1..80}
 echo
 echo "export KUBECONFIG=~/.kube/aws-k8s"

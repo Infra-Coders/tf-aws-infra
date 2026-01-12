@@ -16,6 +16,10 @@ controller:
     use-forwarded-headers: "true"
     compute-full-forwarded-for: "true"
 
+  # Enable SSL passthrough for apps that handle TLS themselves
+  extraArgs:
+    enable-ssl-passthrough: true
+
   # Resource limits
   resources:
     requests:

@@ -34,47 +34,21 @@ Default region name [eu-central-1]:
 Default output format [json]:
 ```
 
-> Note: Check connection to AWS, using your AWS account
-[amifind.sh](https://gist.github.com/vancluever/7676b4dafa97826ef0e9)
-```
-> aws ec2 describe-images --filters Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-* --query 'Images[*].[ImageId,CreationDate]'  --output text
-ami-0035bcf5147a7448d   2024-08-23T10:35:44.000Z
-ami-004e960cde33f9146   2025-10-22T10:49:57.000Z
-ami-0046197d856fdeb85   2024-08-09T10:47:04.000Z
-ami-0083ee179c14acc6a   2025-06-27T10:40:54.000Z
-ami-00d729014c64a6011   2024-08-07T14:40:36.000Z
-ami-014dd8ec7f09293e6   2025-05-30T10:40:19.000Z
-ami-016157bda71793fa4   2025-05-03T11:14:10.000Z
-ami-01c3b1577536650a5   2025-08-21T19:01:22.000Z
-ami-01ad4913168550728   2025-09-20T10:57:07.000Z
-ami-02003f9f0fde924ea   2025-06-10T10:42:30.000Z
-ami-02c70beba709cc62b   2024-07-24T13:31:11.000Z
-[...]
+> Note: Check connection to AWS
+```bash
+aws ec2 describe-images --filters Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-* --query 'Images[*].[ImageId,CreationDate]' --output text
 ```
 
 ### Setup Workdir
 
 > Note: Setup Workdir (amd64|arm64)
+```bash
+git clone git@github.com:Infra-Coders/tf-aws-infra.git
+cd tf-aws-infra/ic-utils
+./setup_WORKDIR
 ```
-> git clone git@github.com:Infra-Coders/tf-aws-infra.git
-> cd tf-aws-infra/ic-utils
-> ./setup_WORKDIR
-[...]
 
-~/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/aws_get -> /Users/kzaremba/bin/aws_get
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/aws_login -> /Users/kzaremba/bin/aws_login
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/ic_git -> /Users/kzaremba/bin/ic_git
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/bin_utils/ic_ssh_wrapper -> /Users/kzaremba/bin/ic_ssh_wrapper
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_helm -> /Users/kzaremba/bin/podman_helm
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_kubectl -> /Users/kzaremba/bin/podman_kubectl
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_run -> /Users/kzaremba/bin/podman_run
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ic-runtime/podman_terraform -> /Users/kzaremba/bin/podman_terraform
-/Users/kzaremba/WORKSPACE/InfraCoders/tf-aws-infra/ic-utils/podman/ansible/ansible_run -> /Users/kzaremba/bin/ansible_run
-/Users/kzaremba/.ssh/ic-k8slab already exists.
-Overwrite (y/n)?
-
-```
+This creates symlinks for `podman_*` utilities in your `~/bin` directory.
 
 
 ### Quick Start - Complete Deployment
@@ -112,245 +86,90 @@ podman_kubectl get nodes -o custom-columns=NAME:.metadata.name,PROVIDER-ID:.spec
 
 **Note:** ProviderID is now automatically configured during node initialization using EC2 metadata service (`169.254.169.254`). No manual patching required.
 
+### Recommended Full Deployment Order
+
+For a complete deployment with TLS and automatic DNS, follow this order:
+
+```bash
+# 1. Deploy infrastructure with Terraform
+podman_terraform init
+podman_terraform apply -auto-approve
+
+# 2. Bootstrap Kubernetes cluster
+podman_run ./scripts/BOOTSTRAP_KUBE.sh
+
+# 3. Deploy Ingress NGINX (creates NLB)
+podman_run ./scripts/deploy-ingress-nginx.sh
+
+# 4. Deploy external-dns (auto-manages Route 53 DNS)
+podman_run ./scripts/deploy-external-dns.sh
+
+# 5. Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues)
+podman_kubectl apply -f manifests/coredns-patch.yaml
+podman_kubectl rollout restart deployment coredns -n kube-system
+
+# 6. Deploy cert-manager
+podman_run ./scripts/deploy-cert-manager.sh
+
+# 7. IMPORTANT: Apply ClusterIssuer (required for TLS certificates!)
+podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
+
+# 8. Deploy your applications
+podman_kubectl apply -f manifests/example-app-edge-tls.yaml
+```
+
+> **⚠️ Common Mistake**: Forgetting step 7 (ClusterIssuer) causes certificates to remain in `READY: False` state.
+
 ### Manual Deployment Steps
 
-If you prefer to run each step manually:
+If you prefer to run each step manually, follow the same order as the recommended deployment:
 
-> Note: Terraform INIT
-```
-> cd tf-aws-infra/single-master-k8s
-> podman_terraform init
+```bash
+# 1. Initialize and apply Terraform
+cd tf-aws-infra/single-master-k8s
+podman_terraform init
+podman_terraform apply -auto-approve
 
-Initializing the backend...
-Initializing provider plugins...
-- Reusing previous version of hashicorp/aws from the dependency lock file
-- Reusing previous version of hashicorp/tls from the dependency lock file
-- Reusing previous version of hashicorp/local from the dependency lock file
-- Using previously-installed hashicorp/aws v6.23.0
-- Using previously-installed hashicorp/tls v4.1.0
-- Using previously-installed hashicorp/local v2.6.1
+# 2. Bootstrap Kubernetes cluster
+podman_run ./scripts/BOOTSTRAP_KUBE.sh
 
-Terraform has been successfully initialized!
+# 3. Deploy Ingress NGINX (creates NLB)
+podman_run ./scripts/deploy-ingress-nginx.sh
 
-You may now begin working with Terraform. Try running "terraform plan" to see
-any changes that are required for your infrastructure. All Terraform commands
-should now work.
+# 4. Deploy external-dns (auto-manages Route 53 DNS)
+podman_run ./scripts/deploy-external-dns.sh
 
-If you ever set or change modules or backend configuration for Terraform,
-rerun this command to reinitialize your working directory. If you forget, other
-commands will detect it and remind you to do so if necessary.
-```
+# 5. Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues)
+podman_kubectl apply -f manifests/coredns-patch.yaml
+podman_kubectl rollout restart deployment coredns -n kube-system
 
-> Note: Terraform PLAN
-```
+# 6. Deploy cert-manager
+podman_run ./scripts/deploy-cert-manager.sh
 
-> cd tf-aws-infra/single-master-k8s
-> podman_terraform plan
-data.aws_ami.ubuntu: Reading...
-data.aws_ami.ubuntu: Read complete after 0s [id=ami-0ccb7fb77fc31decd]
+# 7. IMPORTANT: Apply ClusterIssuer (required for TLS certificates!)
+# Edit manifests/clusterissuer-letsencrypt.yaml and change email first
+podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
 
-Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
-  + create
-
-Terraform will perform the following actions:
-
-  # aws_ec2_instance_metadata_defaults.enforce-imdsv2 will be created
-  + resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
-      + http_endpoint               = "no-preference"
-      + http_put_response_hop_limit = 3
-      + http_tokens                 = "required"
-      + id                          = (known after apply)
-      + instance_metadata_tags      = "no-preference"
-      + region                      = "eu-central-1"
-    }
-[...]
-
-Plan: 20 to add, 0 to change, 0 to destroy.
-
-Changes to Outputs:
-  + master_private_dns = {
-      + master1 = (known after apply)
-    }
-  + master_public_ip   = {
-      + master1 = (known after apply)
-    }
-  + worker_private_dns = {
-      + worker1 = (known after apply)
-      + worker2 = (known after apply)
-      + worker3 = (known after apply)
-    }
-  + worker_public_ip   = {
-      + worker1 = (known after apply)
-      + worker2 = (known after apply)
-      + worker3 = (known after apply)
-    }
-
+# 8. Deploy your applications
+podman_kubectl apply -f manifests/example-app-edge-tls.yaml
 ```
 
-> Note: Terraform APPLY
-```
-> podman_terraform apply
-
-podman_terraform apply
-data.aws_ami.ubuntu: Reading...
-data.aws_ami.ubuntu: Read complete after 1s [id=ami-0ccb7fb77fc31decd]
-
-Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
-  + create
-
-Terraform will perform the following actions:
-
-  # aws_ec2_instance_metadata_defaults.enforce-imdsv2 will be created
-  + resource "aws_ec2_instance_metadata_defaults" "enforce-imdsv2" {
-      + http_endpoint               = "no-preference"
-      + http_put_response_hop_limit = 3
-      + http_tokens                 = "required"
-      + id                          = (known after apply)
-      + instance_metadata_tags      = "no-preference"
-      + region                      = "eu-central-1"
-    }
-
-  # aws_iam_instance_profile.ic-aws-ebs-csi-ec2 will be created
-  + resource "aws_iam_instance_profile" "ic-aws-ebs-csi-ec2" {
-      + arn         = (known after apply)
-      + create_date = (known after apply)
-      + id          = (known after apply)
-      + name        = "ic-aws-ebs-csi-ec2"
-      + name_prefix = (known after apply)
-      + path        = "/"
-      + role        = "ic-aws-ebs-csi-role-ec2"
-      + tags_all    = (known after apply)
-      + unique_id   = (known after apply)
-    }
-[...]
-
-Plan: 20 to add, 0 to change, 0 to destroy.
-
-Changes to Outputs:
-  + master_private_dns = {
-      + master1 = (known after apply)
-    }
-  + master_public_ip   = {
-      + master1 = (known after apply)
-    }
-  + worker_private_dns = {
-      + worker1 = (known after apply)
-      + worker2 = (known after apply)
-      + worker3 = (known after apply)
-    }
-  + worker_public_ip   = {
-      + worker1 = (known after apply)
-      + worker2 = (known after apply)
-      + worker3 = (known after apply)
-    }
-
-Do you want to perform these actions?
-  Terraform will perform the actions described above.
-  Only 'yes' will be accepted to approve.
-
-  Enter a value:
-
-```
 ### Spot vs On-Demand Instances
 - Default: workers launch as Spot; masters launch on-demand to keep the control plane stable.
 - To disable Spot for workers: `terraform plan -var 'workers_spot_enabled=false'`
 - To enable Spot for masters (opt-in, higher risk): `terraform plan -var 'masters_spot_enabled=true'`
 - Spot options (shared): `spot_options.max_price` (string, default `null` = on-demand price as maximum).
 
-### BOOTSTRAP KUBE
+### Verify Deployment
 
-> Note: BOOTSTRAP Kube
-```
-> podman_run ./scripts/BOOTSTRAP_KUBE.sh
---------------------------------------------------------------------------------
-STAGE: NODE_BOOTSTRAP
-NODE_BOOTSTRAP node=3.71.184.121
-NODE_BOOTSTRAP node=3.71.206.191
-NODE_BOOTSTRAP node=3.71.34.88
-NODE_BOOTSTRAP node=63.176.97.58
-Warning: Permanently added '3.71.206.191' (ED25519) to the list of known hosts.
-Warning: Permanently added '3.71.34.88' (ED25519) to the list of known hosts.
-ip-10-0-8-16 cloud-init status: DONE
-ip-10-0-15-220 cloud-init status: DONE
-ip-10-0-6-47 cloud-init status: DONE
-ip-10-0-8-145 cloud-init status: DONE
-STAGE: NODE_BOOTSTRAP success!
---------------------------------------------------------------------------------
-STAGE: NODE_REBOOT
-NODE_REBOOT node=3.71.184.121
-NODE_REBOOT node=3.71.206.191
-NODE_REBOOT node=3.71.34.88
-NODE_REBOOT node=63.176.97.58
-STAGE: NODE_REBOOT success!
+After bootstrap completes, verify your cluster:
 
-[...]
-
-This node has joined the cluster:
-* Certificate signing request was sent to apiserver and a response was received.
-* The Kubelet was informed of the new secure connection details.
-
-Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
-
-
-This node has joined the cluster:
-* Certificate signing request was sent to apiserver and a response was received.
-* The Kubelet was informed of the new secure connection details.
-
-Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
-
-
-This node has joined the cluster:
-* Certificate signing request was sent to apiserver and a response was received.
-* The Kubelet was informed of the new secure connection details.
-
-Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
-
-STAGE: DATA_PLANE_BOOTSTRAP success!
---------------------------------------------------------------------------------
-STAGE: KUBE_READY
-KUBE_READY node=3.71.184.121
---------------------------------------------------------------------------------
-Wait for kobject=[namespace/calico-system] condition=create
-
-[...]
-
-Wait for kobject=[deployment.apps/calico-apiserver] condition=condition=Available
-Wait for kobject=[deployment.apps/calico-kube-controllers] condition=condition=Available
-Wait for kobject=[deployment.apps/calico-typha] condition=condition=Available
-Wait for kobject=[deployment.apps/goldmane] condition=condition=Available
-Wait for kobject=[deployment.apps/whisker] condition=condition=Available
-deployment.apps/calico-typha condition met
-deployment.apps/calico-kube-controllers condition met
-deployment.apps/calico-apiserver condition met
-deployment.apps/whisker condition met
-deployment.apps/goldmane condition met
-Restart kobjects deployment.apps/coredns
-deployment.apps/coredns restarted
---------------------------------------------------------------------------------
-Wait for kobject=[deployment.apps/coredns] condition=condition=Available
-deployment.apps/coredns condition met
-STAGE: KUBE_READY success!
---------------------------------------------------------------------------------
-CMD: GET_KUBECONFIG
-Add Workers labels
-node/ip-10-0-6-47 labeled
-node/ip-10-0-8-145 labeled
-node/ip-10-0-8-16 labeled
-********************************************************************************
+```bash
 export KUBECONFIG=~/.kube/aws-k8s
-********************************************************************************
-
+podman_kubectl get nodes
 ```
 
-> Note: Enjoy new Kube cluster
-
-```
-> podman_kubectl get node
-NAME             STATUS   ROLES           AGE    VERSION
-ip-10-0-1-83     Ready    control-plane   100s   v1.32.10
-ip-10-0-11-214   Ready    worker          87s    v1.32.10
-
-```
+Expected output: All nodes should show `Ready` status with appropriate roles (control-plane, worker).
 
 ### Deploy AWS Cloud Provider
 
@@ -450,6 +269,81 @@ spec:
               number: 80
 ```
 
+### Deploy external-dns for Automatic DNS (Optional)
+
+**external-dns** automatically creates/deletes Route 53 DNS records when you create/delete Ingress resources.
+
+```bash
+# Set KUBECONFIG
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy external-dns
+podman_run ./scripts/deploy-external-dns.sh
+```
+
+**Note**: Requires IAM permissions for Route 53. If deploying to existing cluster, run `podman_terraform apply` first to add the new IAM policy.
+
+DNS records are auto-managed via Ingress annotation:
+```yaml
+annotations:
+  external-dns.alpha.kubernetes.io/hostname: "myapp.luke.infra-coders.com"
+```
+
+### Deploy cert-manager for TLS/HTTPS (Optional)
+
+**cert-manager** automates TLS certificate management using Let's Encrypt.
+
+#### Deploy cert-manager
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy cert-manager
+podman_run ./scripts/deploy-cert-manager.sh
+
+# IMPORTANT: Apply ClusterIssuer (required for certificates to work!)
+# Edit manifests/clusterissuer-letsencrypt.yaml and change email first
+podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
+```
+
+> **⚠️ Common Issue**: If certificates show `READY: False`, ensure you applied the ClusterIssuer above.
+
+#### TLS Termination Strategies
+
+**1. Edge Termination (Recommended for most apps)**
+- cert-manager provisions certificates automatically
+- TLS terminates at ingress-nginx
+- Traffic from ingress to pod is HTTP (inside cluster)
+- Simpler application code
+
+```bash
+# Deploy app with automatic TLS from Let's Encrypt
+# Edit manifests/example-app-edge-tls.yaml and change domain/email
+podman_kubectl apply -f manifests/example-app-edge-tls.yaml
+
+# Check certificate status
+podman_kubectl get certificate
+podman_kubectl describe certificate nginx-edge-tls-cert
+```
+
+**2. Passthrough (For end-to-end encryption)**
+- Application handles its own TLS
+- Ingress forwards encrypted traffic to pod
+- Traffic remains encrypted from client to pod
+- Application must serve HTTPS
+
+```bash
+# Deploy app that handles its own TLS
+# Edit manifests/example-app-passthrough-tls.yaml and change domain
+podman_kubectl apply -f manifests/example-app-passthrough-tls.yaml
+```
+
+**Let's Encrypt Rate Limits:**
+- Staging: Unlimited (use for testing)
+- Production: 50 certificates/week per domain
+
+Always test with `letsencrypt-staging` issuer first, then switch to `letsencrypt-prod`.
+
 ### Test AWS Cloud Provider (Direct LoadBalancer)
 
 **Note**: This creates a separate LoadBalancer per service. Use Ingress NGINX instead for cost efficiency.
@@ -464,6 +358,79 @@ podman_kubectl get svc nginx -w
 ```
 
 ## Cleanup
+
+### Quick Full Cleanup (Recommended)
+
+Use the cleanup script to remove all deployed resources in the correct order:
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Run full cleanup script
+podman_run ./scripts/cleanup-all.sh
+```
+
+This script removes (in order):
+1. Example applications
+2. ClusterIssuers and certificates
+3. cert-manager
+4. external-dns
+5. ingress-nginx (and its NLB)
+
+### Manual Cleanup Steps
+
+If you prefer manual cleanup or need to remove specific components:
+
+### Remove external-dns (if deployed)
+
+To remove external-dns:
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# 1. Uninstall external-dns (DNS records will be auto-deleted by sync policy)
+podman_helm uninstall external-dns -n external-dns
+
+# 2. Delete the namespace
+podman_kubectl delete namespace external-dns
+```
+
+**Note**: With `policy=sync`, external-dns automatically deletes DNS records when Ingress resources are removed. Records are also cleaned up when external-dns is uninstalled.
+
+### Remove cert-manager and TLS Applications (if deployed)
+
+To remove cert-manager and TLS-enabled applications:
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# 1. Delete TLS example applications
+podman_kubectl delete -f manifests/example-app-edge-tls.yaml 2>/dev/null || true
+podman_kubectl delete -f manifests/example-app-passthrough-tls.yaml 2>/dev/null || true
+
+# 2. Delete ClusterIssuers (removes Let's Encrypt configuration)
+podman_kubectl delete -f manifests/clusterissuer-letsencrypt.yaml 2>/dev/null || true
+
+# 3. Delete any remaining certificates and secrets
+podman_kubectl delete certificate --all -n default
+podman_kubectl get secret -n default | grep tls | awk '{print $1}' | xargs -r podman_kubectl delete secret -n default
+
+# 4. Uninstall cert-manager
+podman_helm uninstall cert-manager -n cert-manager 2>/dev/null || true
+
+# 5. Delete cert-manager namespace and CRDs
+podman_kubectl delete namespace cert-manager
+```
+
+**Note**: cert-manager CRDs will remain. To remove them completely:
+```bash
+podman_kubectl delete crd certificates.cert-manager.io
+podman_kubectl delete crd certificaterequests.cert-manager.io
+podman_kubectl delete crd challenges.acme.cert-manager.io
+podman_kubectl delete crd clusterissuers.cert-manager.io
+podman_kubectl delete crd issuers.cert-manager.io
+podman_kubectl delete crd orders.acme.cert-manager.io
+```
 
 ### Remove Ingress NGINX (if deployed)
 
@@ -495,22 +462,24 @@ sleep 180
 ```bash
 export KUBECONFIG=~/.kube/aws-k8s
 
-# 1. Delete Ingress NGINX (if deployed) - see above
+# 1. Delete cert-manager (if deployed) - see above
 
-# 2. Delete any other LoadBalancer services you created
+# 2. Delete Ingress NGINX (if deployed) - see above
+
+# 3. Delete any other LoadBalancer services you created
 podman_kubectl get svc --all-namespaces -o wide | grep LoadBalancer
 # Delete each LoadBalancer service individually:
 podman_kubectl delete svc <service-name> -n <namespace>
 
-# 3. Wait for AWS to clean up all LoadBalancers (3 minutes)
+# 4. Wait for AWS to clean up all LoadBalancers (3 minutes)
 sleep 180
 
-# 4. Verify no LoadBalancers remain in your VPC
+# 5. Verify no LoadBalancers remain in your VPC
 VPC_ID=$(podman_terraform output -raw vpc_id)
 aws elbv2 describe-load-balancers --region eu-central-1 \
   --query "LoadBalancers[?VpcId=='$VPC_ID']"
 
-# 5. Destroy Terraform infrastructure
+# 6. Destroy Terraform infrastructure
 podman_terraform destroy -auto-approve
 
 # Note: If you get AWS credential errors, use -refresh=false to skip state refresh

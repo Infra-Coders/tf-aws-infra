@@ -144,6 +144,40 @@ resource "aws_iam_role_policy_attachment" "control_plane_policy_attachment" {
   policy_arn = aws_iam_policy.k8s_control_plane_policy.arn
 }
 
+# Route 53 Policy for external-dns
+resource "aws_iam_policy" "k8s_external_dns_policy" {
+  name        = "ic-k8s-external-dns-policy"
+  description = "IAM policy for external-dns to manage Route 53 records"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "route53:ChangeResourceRecordSets"
+        ]
+        Resource = "arn:aws:route53:::hostedzone/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "route53:ListHostedZones",
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Attach external-dns policy to Worker Role (external-dns runs on workers)
+resource "aws_iam_role_policy_attachment" "worker_external_dns" {
+  role       = aws_iam_role.k8s_worker_role.name
+  policy_arn = aws_iam_policy.k8s_external_dns_policy.arn
+}
+
 # Attach CSI policies to Control Plane Role (existing CSI driver support)
 resource "aws_iam_role_policy_attachment" "control_plane_ebs_csi" {
   role       = aws_iam_role.k8s_control_plane_role.name
