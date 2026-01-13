@@ -123,34 +123,18 @@ export KUBECONFIG=~/.kube/aws-k8s
 echo "Add Workers labels"
 ./scripts/label_all_workers
 
-# Wait for API server to be fully stable
-echo "Waiting for API server to stabilize..."
-sleep 10
-for i in {1..30}; do
-  if kubectl get nodes &>/dev/null; then
-    echo "API server is ready"
-    break
-  fi
-  echo "Waiting for API server... ($i/30)"
-  sleep 10
-done
-
-# Deploy AWS Cloud Provider locally
-echo "Deploying AWS Cloud Provider locally..."
-export KUBECONFIG=~/.kube/aws-k8s
-./scripts/deploy-aws-cloud-provider.sh || {
-  echo "Warning: AWS Cloud Provider deployment failed. You can retry manually with:"
-  echo "  export KUBECONFIG=~/.kube/aws-k8s"
-  echo "  ./scripts/deploy-aws-cloud-provider.sh"
-}
-
-# Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues for cert-manager)
-echo "Patching CoreDNS to use Google DNS..."
-kubectl apply -f manifests/coredns-patch.yaml 2>/dev/null || true
-kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
-
 printf "%0.s*" {1..80}
 echo
-echo "export KUBECONFIG=~/.kube/aws-k8s"
+echo "BOOTSTRAP COMPLETE!"
+echo ""
+echo "Next steps:"
+echo "  1. Export KUBECONFIG:"
+echo "     export KUBECONFIG=~/.kube/aws-k8s"
+echo ""
+echo "  2. Deploy AWS Cloud Controller Manager (optional, for LoadBalancer support):"
+echo "     podman_run ./scripts/deploy-aws-cloud-provider.sh"
+echo ""
+echo "  3. Deploy Ingress NGINX (optional, for HTTP/HTTPS routing):"
+echo "     podman_run ./scripts/deploy-ingress-nginx.sh"
 printf "%0.s*" {1..80}
 echo

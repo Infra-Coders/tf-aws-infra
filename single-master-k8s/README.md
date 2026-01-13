@@ -1,47 +1,41 @@
-# tf-aws-infra
+# Kubernetes on AWS - Single Master Cluster
 
-### Useful links
-#### K8s
-[install kubeadm](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)<br>
-[cri](https://v1-32.docs.kubernetes.io/docs/concepts/architecture/cri/)<br>
-[cri-o](https://cri-o.io/)<br>
-[create k8s using kubeadm](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)<br>
-[create HA k8s](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/)<br>
-[kubelet customization](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/kubelet-integration/)<br>
-#### Tiger Operator, Callico
-[calico install](https://docs.tigera.io/calico/latest/getting-started/kubernetes/k8s-single-node)<br>
-[calico customize](https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/config-options)<br>
-#### AWS VPC CNI
-[amazon-vpc-cni-k8s](https://github.com/aws/amazon-vpc-cni-k8s)
+Production-ready Kubernetes cluster on AWS using kubeadm, Calico CNI with eBPF dataplane, and optional AWS integrations.
 
-#### AWS Cloud Provider
-[cloud-provider-aws](https://github.com/kubernetes/cloud-provider-aws)
-[aws-load-balancer-controller](https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html)
+## Table of Contents
+- [Prerequisites](#prerequisites)
+- [1. Bootstrap Cluster](#1-bootstrap-cluster)
+- [2. AWS Cloud Controller Manager (Optional)](#2-aws-cloud-controller-manager-optional)
+- [3. Ingress NGINX](#3-ingress-nginx)
+- [4. External DNS (Optional)](#4-external-dns-optional)
+- [5. Cert-Manager (Optional)](#5-cert-manager-optional)
+- [Cleanup](#cleanup)
+- [Troubleshooting](#troubleshooting)
+- [Reference Links](#reference-links)
 
-#### Flux
-[flux](https://spacelift.io/blog/fluxcd)<br>
-[flux install](https://fluxcd.io/flux/installation/)<br>
+---
 
-### AWS connection
+## Prerequisites
 
-> Note: Check your AWS credentials & update provdider.tf
-```
-> cat ~/.aws/credentials
-> aws configure --profile <your_profile>
-AWS Access Key ID [****************PTVK]:
-AWS Secret Access Key [****************deH7]:
-Default region name [eu-central-1]:
-Default output format [json]:
+### AWS Credentials
+
+Configure AWS credentials:
+```bash
+aws configure --profile <your_profile>
+# AWS Access Key ID: ****************
+# AWS Secret Access Key: ****************
+# Default region: eu-central-1
+# Default output format: json
 ```
 
-> Note: Check connection to AWS
+Verify connection:
 ```bash
 aws ec2 describe-images --filters Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-* --query 'Images[*].[ImageId,CreationDate]' --output text
 ```
 
 ### Setup Workdir
 
-> Note: Setup Workdir (amd64|arm64)
+Clone repository and setup utilities:
 ```bash
 git clone git@github.com:Infra-Coders/tf-aws-infra.git
 cd tf-aws-infra/ic-utils
@@ -50,10 +44,19 @@ cd tf-aws-infra/ic-utils
 
 This creates symlinks for `podman_*` utilities in your `~/bin` directory.
 
+### Spot vs On-Demand Instances
+- **Default**: Workers launch as Spot instances; masters launch on-demand for control plane stability
+- Disable Spot for workers: `terraform plan -var 'workers_spot_enabled=false'`
+- Enable Spot for masters: `terraform plan -var 'masters_spot_enabled=true'`
+- Control max price: `spot_options.max_price` (default: `null` = on-demand price)
 
-### Quick Start - Complete Deployment
+---
 
-Deploy the entire cluster:
+## 1. Bootstrap Cluster
+
+Deploy basic Kubernetes cluster with Calico CNI.
+
+### Deploy
 
 ```bash
 cd tf-aws-infra/single-master-k8s
@@ -61,198 +64,190 @@ cd tf-aws-infra/single-master-k8s
 # Initialize Terraform
 podman_terraform init
 
-# Apply Terraform to create infrastructure
+# Create AWS infrastructure
 podman_terraform apply
 
 # Bootstrap Kubernetes cluster
 podman_run ./scripts/BOOTSTRAP_KUBE.sh
 ```
 
-This will:
-1. Create AWS infrastructure (VPC, subnets, EC2 instances, IAM roles)
-2. Bootstrap Kubernetes cluster with kubeadm
-3. Deploy Calico CNI
-4. Deploy AWS Cloud Controller Manager
-5. **Automatically set ProviderID on all nodes** via kubeadm configuration
-   - Master node: ProviderID set in kubeadm InitConfiguration
-   - Worker nodes: ProviderID added to kubeadm join command
-6. Configure kubectl access
+### What Gets Deployed
 
-After deployment completes:
-```bash
-export KUBECONFIG=~/.kube/aws-k8s
-podman_kubectl get nodes -o custom-columns=NAME:.metadata.name,PROVIDER-ID:.spec.providerID
-```
+**Infrastructure:**
+- VPC with public/private subnets across availability zones
+- EC2 instances (1 master, 3 workers by default)
+- Security groups, IAM roles, instance profiles
+- EC2 metadata service (IMDSv2 enforced)
 
-**Note:** ProviderID is now automatically configured during node initialization using EC2 metadata service (`169.254.169.254`). No manual patching required.
-
-### Recommended Full Deployment Order
-
-For a complete deployment with TLS and automatic DNS, follow this order:
-
-```bash
-# 1. Deploy infrastructure with Terraform
-podman_terraform init
-podman_terraform apply -auto-approve
-
-# 2. Bootstrap Kubernetes cluster
-podman_run ./scripts/BOOTSTRAP_KUBE.sh
-
-# 3. Deploy Ingress NGINX (creates NLB)
-podman_run ./scripts/deploy-ingress-nginx.sh
-
-# 4. Deploy external-dns (auto-manages Route 53 DNS)
-podman_run ./scripts/deploy-external-dns.sh
-
-# 5. Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues)
-podman_kubectl apply -f manifests/coredns-patch.yaml
-podman_kubectl rollout restart deployment coredns -n kube-system
-
-# 6. Deploy cert-manager
-podman_run ./scripts/deploy-cert-manager.sh
-
-# 7. IMPORTANT: Apply ClusterIssuer (required for TLS certificates!)
-podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
-
-# 8. Deploy your applications
-podman_kubectl apply -f manifests/example-app-edge-tls.yaml
-```
-
-> **⚠️ Common Mistake**: Forgetting step 7 (ClusterIssuer) causes certificates to remain in `READY: False` state.
-
-### Manual Deployment Steps
-
-If you prefer to run each step manually, follow the same order as the recommended deployment:
-
-```bash
-# 1. Initialize and apply Terraform
-cd tf-aws-infra/single-master-k8s
-podman_terraform init
-podman_terraform apply -auto-approve
-
-# 2. Bootstrap Kubernetes cluster
-podman_run ./scripts/BOOTSTRAP_KUBE.sh
-
-# 3. Deploy Ingress NGINX (creates NLB)
-podman_run ./scripts/deploy-ingress-nginx.sh
-
-# 4. Deploy external-dns (auto-manages Route 53 DNS)
-podman_run ./scripts/deploy-external-dns.sh
-
-# 5. Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues)
-podman_kubectl apply -f manifests/coredns-patch.yaml
-podman_kubectl rollout restart deployment coredns -n kube-system
-
-# 6. Deploy cert-manager
-podman_run ./scripts/deploy-cert-manager.sh
-
-# 7. IMPORTANT: Apply ClusterIssuer (required for TLS certificates!)
-# Edit manifests/clusterissuer-letsencrypt.yaml and change email first
-podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
-
-# 8. Deploy your applications
-podman_kubectl apply -f manifests/example-app-edge-tls.yaml
-```
-
-### Spot vs On-Demand Instances
-- Default: workers launch as Spot; masters launch on-demand to keep the control plane stable.
-- To disable Spot for workers: `terraform plan -var 'workers_spot_enabled=false'`
-- To enable Spot for masters (opt-in, higher risk): `terraform plan -var 'masters_spot_enabled=true'`
-- Spot options (shared): `spot_options.max_price` (string, default `null` = on-demand price as maximum).
+**Kubernetes:**
+- Kubernetes v1.32.10 via kubeadm
+- Calico CNI with eBPF dataplane (pod network: 10.244.0.0/16)
+- CRI-O container runtime
+- CoreDNS patched to use Google DNS (8.8.8.8) to avoid VPC DNS caching
+- **ProviderID automatically set** on all nodes via kubeadm configuration
 
 ### Verify Deployment
 
-After bootstrap completes, verify your cluster:
-
 ```bash
 export KUBECONFIG=~/.kube/aws-k8s
-podman_kubectl get nodes
+
+# Check nodes
+podman_kubectl get nodes -o wide
+
+# Verify ProviderID is set
+podman_kubectl get nodes -o custom-columns=NAME:.metadata.name,PROVIDER-ID:.spec.providerID
+
+# Check pods
+podman_kubectl get pods -A
 ```
 
-Expected output: All nodes should show `Ready` status with appropriate roles (control-plane, worker).
+Expected output: All nodes `Ready`, all pods `Running`, ProviderID format `aws:///eu-central-1a/i-xxxxx`.
 
-### Deploy AWS Cloud Provider
+---
 
-The AWS Cloud Provider is automatically deployed at the end of the `BOOTSTRAP_KUBE.sh` process using `podman_helm` locally.
+## 2. AWS Cloud Controller Manager (Optional)
 
-**What happens automatically:**
-1. **ProviderID is set during node initialization** via kubeadm configuration
-   - Master node: `provider-id` set in kubeadm InitConfiguration (`kubeletExtraArgs`)
-   - Worker nodes: `provider-id` set in kubeadm JoinConfiguration via `create-join-config.sh`
-   - Each node queries EC2 metadata service for instance-id and availability-zone
-   - Format: `aws:///availability-zone/instance-id`
-2. AWS Cloud Controller Manager is deployed with correct cluster name
-3. Nodes are automatically registered for LoadBalancer target management
+Deploy AWS Cloud Controller Manager for native AWS integration and LoadBalancer provisioning.
 
-**Note**: The AWS Cloud Provider is deployed locally (not on control plane) to follow best practices:
-- Better security isolation
-- No resource consumption on control plane nodes
-- Local deployment history tracking
-- Version control friendly configurations
+### When to Deploy
 
-If you need to redeploy it manually:
+**Deploy if you need:**
+- LoadBalancer services (automatic AWS NLB/CLB provisioning)
+- Node lifecycle management by AWS
+- Cloud-aware Kubernetes operations
+
+**Skip if:**
+- You only need Ingress NGINX for HTTP/HTTPS routing (more cost-effective)
+
+### Deploy
+
 ```bash
-# Set KUBECONFIG (from BOOTSTRAP_KUBE output)
 export KUBECONFIG=~/.kube/aws-k8s
-
-# Deploy AWS Cloud Provider
 podman_run ./scripts/deploy-aws-cloud-provider.sh
 ```
 
-### Deploy Ingress NGINX (Recommended for Cost Efficiency)
-
-**Cost Optimization**: Instead of creating one LoadBalancer per application, use a single NLB with Ingress NGINX for HTTP/HTTPS routing to multiple applications.
-
-**Architecture:**
-```
-Client → AWS NLB (TCP/443,80) → NodePort → ingress-nginx → HTTP routing → App Services → App Pods
-```
-
-**Benefits:**
-- Single NLB for all HTTP/HTTPS traffic
-- TLS termination at ingress level
-- Path-based and host-based routing
-- Centralized certificate management
-
-#### Deploy Ingress NGINX Controller
+### Verify
 
 ```bash
-# Set KUBECONFIG
+# Check cloud controller manager pod
+podman_kubectl get pods -n kube-system -l k8s-app=aws-cloud-controller-manager
+
+# Test with a LoadBalancer service
+podman_kubectl create deployment test-nginx --image=nginx
+podman_kubectl expose deployment test-nginx --port=80 --type=LoadBalancer
+
+# Watch for EXTERNAL-IP (takes 2-3 minutes)
+podman_kubectl get svc test-nginx -w
+
+# Clean up test
+podman_kubectl delete svc test-nginx
+podman_kubectl delete deployment test-nginx
+```
+
+### What It Provides
+
+- **LoadBalancer services**: Automatically provisions AWS NLB/CLB
+- **Node management**: Syncs node metadata with AWS EC2
+- **Cloud integration**: Enables cloud-aware scheduling and operations
+
+**Cost Note**: Each LoadBalancer service creates a separate AWS NLB (~$16-20/month). For HTTP/HTTPS traffic, use Ingress NGINX instead (single NLB for all apps).
+
+---
+
+## 3. Ingress NGINX
+
+Deploy Ingress NGINX for cost-efficient HTTP/HTTPS routing using a single NLB for all applications.
+
+### Architecture
+
+```
+Internet → AWS NLB (TCP/443,80) → NodePort → ingress-nginx → ClusterIP Services → Pods
+```
+
+### Benefits
+
+- **Cost optimization**: Single NLB for all HTTP/HTTPS traffic (vs. one per app)
+- **TLS termination**: Centralized certificate management
+- **Routing**: Host-based and path-based routing
+- **Load balancing**: Distributes traffic across pods
+
+### Deploy
+
+```bash
 export KUBECONFIG=~/.kube/aws-k8s
-
-# Deploy Ingress NGINX with NLB
 podman_run ./scripts/deploy-ingress-nginx.sh
-
-# Get NLB hostname
-podman_kubectl get svc ingress-nginx-controller -n ingress-nginx
 ```
 
-#### Deploy Example Application with Ingress
+### Verify
 
 ```bash
-# Deploy example app (uses ClusterIP service + Ingress)
+# Get NLB hostname (wait 2-3 minutes for provisioning)
+podman_kubectl get svc ingress-nginx-controller -n ingress-nginx
+
+# Expected output shows EXTERNAL-IP with AWS NLB hostname
+```
+
+### Deploy Example Application
+
+```bash
+# Deploy sample app with Ingress
 podman_kubectl apply -f manifests/example-app.yaml
 
-# Check ingress
+# Check Ingress
 podman_kubectl get ingress
 
-# Test access (replace with your NLB hostname)
+# Test (replace <NLB-HOSTNAME> with actual value from above)
 curl -H "Host: demo.luke.infra-coders.com" http://<NLB-HOSTNAME>
 ```
 
-#### Add More Applications
+### Deploy Your Own Application
 
-For each new application, create:
-1. **Deployment** - Your application pods
-2. **Service** - Type: ClusterIP (not LoadBalancer!)
-3. **Ingress** - HTTP routing rules
+Create three resources for each application:
 
-Example:
+**1. Deployment** (your application):
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:latest
+        ports:
+        - containerPort: 8080
+```
+
+**2. Service** (use ClusterIP, not LoadBalancer):
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+spec:
+  type: ClusterIP
+  selector:
+    app: myapp
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+**3. Ingress** (routing rules):
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: my-app
+  name: myapp-ingress
   annotations:
     kubernetes.io/ingress.class: nginx
 spec:
@@ -264,36 +259,84 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: my-app-service
+            name: myapp-service
             port:
               number: 80
 ```
 
-### Deploy external-dns for Automatic DNS (Optional)
+Apply:
+```bash
+podman_kubectl apply -f myapp.yaml
+```
 
-**external-dns** automatically creates/deletes Route 53 DNS records when you create/delete Ingress resources.
+---
+
+## 4. External DNS (Optional)
+
+Automatically manage Route 53 DNS records when creating/deleting Ingress resources.
+
+### Prerequisites
+
+- Route 53 hosted zone in your AWS account
+- Domain configured to use Route 53 nameservers
+
+### Deploy
 
 ```bash
-# Set KUBECONFIG
 export KUBECONFIG=~/.kube/aws-k8s
-
-# Deploy external-dns
 podman_run ./scripts/deploy-external-dns.sh
 ```
 
-**Note**: Requires IAM permissions for Route 53. If deploying to existing cluster, run `podman_terraform apply` first to add the new IAM policy.
+**Note**: Requires IAM permissions for Route 53. If deploying to existing cluster, run `podman_terraform apply` first to add the IAM policy.
 
-DNS records are auto-managed via Ingress annotation:
+### Usage
+
+Add annotation to your Ingress resources:
+
 ```yaml
-annotations:
-  external-dns.alpha.kubernetes.io/hostname: "myapp.luke.infra-coders.com"
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    external-dns.alpha.kubernetes.io/hostname: "myapp.example.com"
+spec:
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: myapp-service
+            port:
+              number: 80
 ```
 
-### Deploy cert-manager for TLS/HTTPS (Optional)
+external-dns will automatically:
+- Create A record pointing to NLB when Ingress is created
+- Delete record when Ingress is deleted
+- Update records when NLB changes
 
-**cert-manager** automates TLS certificate management using Let's Encrypt.
+### Verify
 
-#### Deploy cert-manager
+```bash
+# Check external-dns logs
+podman_kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns
+
+# Verify DNS record in Route 53
+aws route53 list-resource-record-sets --hosted-zone-id <YOUR_ZONE_ID>
+```
+
+---
+
+## 5. Cert-Manager (Optional)
+
+Automate TLS certificate management using Let's Encrypt.
+
+### Deploy
 
 ```bash
 export KUBECONFIG=~/.kube/aws-k8s
@@ -301,129 +344,201 @@ export KUBECONFIG=~/.kube/aws-k8s
 # Deploy cert-manager
 podman_run ./scripts/deploy-cert-manager.sh
 
-# IMPORTANT: Apply ClusterIssuer (required for certificates to work!)
+# IMPORTANT: Apply ClusterIssuer (required for certificates!)
 # Edit manifests/clusterissuer-letsencrypt.yaml and change email first
 podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
 ```
 
-> **⚠️ Common Issue**: If certificates show `READY: False`, ensure you applied the ClusterIssuer above.
+### TLS Termination: Edge (Recommended)
 
-#### TLS Termination Strategies
-
-**1. Edge Termination (Recommended for most apps)**
-- cert-manager provisions certificates automatically
+**How it works:**
+- cert-manager automatically provisions Let's Encrypt certificates
 - TLS terminates at ingress-nginx
 - Traffic from ingress to pod is HTTP (inside cluster)
-- Simpler application code
+- Simpler application code (no TLS handling needed)
 
+**Deploy example:**
 ```bash
-# Deploy app with automatic TLS from Let's Encrypt
-# Edit manifests/example-app-edge-tls.yaml and change domain/email
+# Edit manifests/example-app-edge-tls.yaml:
+# - Change domain to your domain
+# - Change email in certificate annotation
 podman_kubectl apply -f manifests/example-app-edge-tls.yaml
 
 # Check certificate status
 podman_kubectl get certificate
-podman_kubectl describe certificate nginx-edge-tls-cert
+podman_kubectl describe certificate <cert-name>
 ```
 
-**2. Passthrough (For end-to-end encryption)**
+**Certificate manifest structure:**
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: myapp-tls
+spec:
+  secretName: myapp-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - myapp.example.com
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    external-dns.alpha.kubernetes.io/hostname: "myapp.example.com"
+spec:
+  tls:
+  - hosts:
+    - myapp.example.com
+    secretName: myapp-tls-secret
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: myapp-service
+            port:
+              number: 80
+```
+
+### TLS Termination: Passthrough (Advanced)
+
+**When to use:**
+- End-to-end encryption required
 - Application handles its own TLS
+- Compliance requirements for encrypted traffic inside cluster
+
+**How it works:**
+- Application serves HTTPS
 - Ingress forwards encrypted traffic to pod
 - Traffic remains encrypted from client to pod
-- Application must serve HTTPS
 
+**Deploy example:**
 ```bash
-# Deploy app that handles its own TLS
 # Edit manifests/example-app-passthrough-tls.yaml and change domain
 podman_kubectl apply -f manifests/example-app-passthrough-tls.yaml
 ```
 
-**Let's Encrypt Rate Limits:**
-- Staging: Unlimited (use for testing)
-- Production: 50 certificates/week per domain
+### Troubleshooting: DNS Not Resolving
 
-Always test with `letsencrypt-staging` issuer first, then switch to `letsencrypt-prod`.
+**Symptoms**: After deploying Ingress with external-dns annotation, `dig` or `curl` return "Could not resolve host" or NXDOMAIN.
 
-### Test AWS Cloud Provider (Direct LoadBalancer)
+**Root Cause**: Route 53 alias record propagation delay. Records appear immediately in the Route 53 API but can take 1-3 minutes to propagate to all nameservers.
 
-**Note**: This creates a separate LoadBalancer per service. Use Ingress NGINX instead for cost efficiency.
+**Diagnosis**:
 
 ```bash
-# Deploy test nginx with LoadBalancer
-podman_kubectl create deployment nginx --image=nginx
-podman_kubectl expose deployment nginx --port=80 --type=LoadBalancer
+# 1. Verify records exist in Route 53
+ZONE_ID=$(aws route53 list-hosted-zones --query "HostedZones[?Name=='your-domain.com.'].Id" --output text | cut -d'/' -f3)
+aws route53 list-resource-record-sets --hosted-zone-id $ZONE_ID --query "ResourceRecordSets[?Name=='your-app.your-domain.com.']"
 
-# Get LoadBalancer URL
-podman_kubectl get svc nginx -w
+# 2. Test DNS resolution against Route 53 nameservers
+# Get nameservers for your zone
+aws route53 get-hosted-zone --id $ZONE_ID --query "DelegationSet.NameServers"
+
+# Test each nameserver directly
+dig @ns-541.awsdns-03.net your-app.your-domain.com A
+
+# 3. Check external-dns logs for errors
+kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns --tail=50
 ```
+
+**Solution**: If records exist in Route 53 API but nameservers return NXDOMAIN, recreate the Ingress to force fresh DNS records:
+
+```bash
+# Delete Ingress (external-dns will delete stale DNS records)
+kubectl delete ingress <your-ingress-name>
+
+# Wait for deletion to complete (check external-dns logs)
+kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns --tail=20
+
+# Recreate Ingress (external-dns will create fresh DNS records)
+kubectl apply -f your-ingress.yaml
+
+# Wait 2-3 minutes for propagation, then test
+dig your-app.your-domain.com +short
+```
+
+**Prevention**: After creating new Ingress resources with external-dns annotations, wait 2-3 minutes before testing DNS resolution.
+
+### Let's Encrypt Rate Limits
+
+**Important**: Test with staging first, then switch to production.
+
+- **Staging issuer** (`letsencrypt-staging`): Unlimited certificates (use for testing)
+- **Production issuer** (`letsencrypt-prod`): 50 certificates/week per domain
+
+### Troubleshooting Certificates
+
+If certificate shows `READY: False`:
+
+```bash
+# 1. Verify ClusterIssuer exists
+podman_kubectl get clusterissuer
+
+# 2. Check certificate details
+podman_kubectl describe certificate <cert-name>
+
+# 3. Check certificate request
+podman_kubectl get certificaterequest
+podman_kubectl describe certificaterequest <request-name>
+
+# 4. Check ACME challenge
+podman_kubectl get challenge
+podman_kubectl describe challenge <challenge-name>
+
+# 5. Check cert-manager logs
+podman_kubectl logs -n cert-manager -l app=cert-manager
+```
+
+Common issues:
+- ClusterIssuer not applied
+- DNS not pointing to NLB yet
+- Firewall blocking Let's Encrypt validation (ports 80/443)
+
+---
 
 ## Cleanup
 
-### Quick Full Cleanup (Recommended)
+**IMPORTANT**: Always remove Kubernetes resources before destroying Terraform infrastructure to avoid orphaned AWS resources (LoadBalancers, security groups, etc.).
 
-Use the cleanup script to remove all deployed resources in the correct order:
-
-```bash
-export KUBECONFIG=~/.kube/aws-k8s
-
-# Run full cleanup script
-podman_run ./scripts/cleanup-all.sh
-```
-
-This script removes (in order):
-1. Example applications
-2. ClusterIssuers and certificates
-3. cert-manager
-4. external-dns
-5. ingress-nginx (and its NLB)
-
-### Manual Cleanup Steps
-
-If you prefer manual cleanup or need to remove specific components:
-
-### Remove external-dns (if deployed)
-
-To remove external-dns:
+### Step 1: Remove Applications and TLS Certificates
 
 ```bash
 export KUBECONFIG=~/.kube/aws-k8s
 
-# 1. Uninstall external-dns (DNS records will be auto-deleted by sync policy)
-podman_helm uninstall external-dns -n external-dns
+# Delete your applications
+podman_kubectl delete -f your-app.yaml
 
-# 2. Delete the namespace
-podman_kubectl delete namespace external-dns
-```
+# Delete TLS example applications
+podman_kubectl delete -f manifests/example-app-edge-tls.yaml
+podman_kubectl delete -f manifests/example-app-passthrough-tls.yaml
 
-**Note**: With `policy=sync`, external-dns automatically deletes DNS records when Ingress resources are removed. Records are also cleaned up when external-dns is uninstalled.
+# Delete ClusterIssuers
+podman_kubectl delete -f manifests/clusterissuer-letsencrypt.yaml
 
-### Remove cert-manager and TLS Applications (if deployed)
-
-To remove cert-manager and TLS-enabled applications:
-
-```bash
-export KUBECONFIG=~/.kube/aws-k8s
-
-# 1. Delete TLS example applications
-podman_kubectl delete -f manifests/example-app-edge-tls.yaml 2>/dev/null || true
-podman_kubectl delete -f manifests/example-app-passthrough-tls.yaml 2>/dev/null || true
-
-# 2. Delete ClusterIssuers (removes Let's Encrypt configuration)
-podman_kubectl delete -f manifests/clusterissuer-letsencrypt.yaml 2>/dev/null || true
-
-# 3. Delete any remaining certificates and secrets
+# Delete remaining certificates and secrets
 podman_kubectl delete certificate --all -n default
 podman_kubectl get secret -n default | grep tls | awk '{print $1}' | xargs -r podman_kubectl delete secret -n default
-
-# 4. Uninstall cert-manager
-podman_helm uninstall cert-manager -n cert-manager 2>/dev/null || true
-
-# 5. Delete cert-manager namespace and CRDs
-podman_kubectl delete namespace cert-manager
 ```
 
-**Note**: cert-manager CRDs will remain. To remove them completely:
+### Step 2: Remove cert-manager (if deployed)
+
 ```bash
+# Uninstall cert-manager
+podman_helm uninstall cert-manager -n cert-manager
+
+# Delete namespace
+podman_kubectl delete namespace cert-manager
+
+# Optional: Remove CRDs
 podman_kubectl delete crd certificates.cert-manager.io
 podman_kubectl delete crd certificaterequests.cert-manager.io
 podman_kubectl delete crd challenges.acme.cert-manager.io
@@ -432,62 +547,86 @@ podman_kubectl delete crd issuers.cert-manager.io
 podman_kubectl delete crd orders.acme.cert-manager.io
 ```
 
-### Remove Ingress NGINX (if deployed)
-
-To remove only the ingress-nginx namespace and its NLB:
+### Step 3: Remove external-dns (if deployed)
 
 ```bash
-export KUBECONFIG=~/.kube/aws-k8s
+# Uninstall external-dns (DNS records auto-deleted with policy=sync)
+podman_helm uninstall external-dns -n external-dns
 
-# 1. Delete all Ingress resources in default namespace
+# Delete namespace
+podman_kubectl delete namespace external-dns
+```
+
+### Step 4: Remove Ingress NGINX (if deployed)
+
+```bash
+# Delete all Ingress resources
 podman_kubectl delete ingress --all -n default
 
-# 2. Delete example applications
+# Delete example apps
 podman_kubectl delete -f manifests/example-app.yaml
 
-# 3. Uninstall Ingress NGINX (removes NLB)
+# Uninstall Ingress NGINX (removes NLB)
 podman_helm uninstall ingress-nginx -n ingress-nginx
 
-# 4. Delete the namespace
+# Delete namespace
 podman_kubectl delete namespace ingress-nginx
 
-# 5. Wait for AWS to clean up the NLB (2-3 minutes)
+# Wait for AWS to clean up NLB
 sleep 180
 ```
 
-### Destroy Complete Infrastructure
-
-**IMPORTANT**: Delete all LoadBalancer services first to avoid orphaned AWS resources.
+### Step 5: Remove AWS Cloud Controller (if deployed)
 
 ```bash
-export KUBECONFIG=~/.kube/aws-k8s
+# Uninstall AWS cloud controller
+podman_helm uninstall aws-cloud-controller-manager -n kube-system
+```
 
-# 1. Delete cert-manager (if deployed) - see above
+### Step 6: Remove Any Other LoadBalancer Services
 
-# 2. Delete Ingress NGINX (if deployed) - see above
-
-# 3. Delete any other LoadBalancer services you created
+```bash
+# List all LoadBalancer services
 podman_kubectl get svc --all-namespaces -o wide | grep LoadBalancer
-# Delete each LoadBalancer service individually:
+
+# Delete each LoadBalancer service
 podman_kubectl delete svc <service-name> -n <namespace>
 
-# 4. Wait for AWS to clean up all LoadBalancers (3 minutes)
+# Wait for AWS cleanup
 sleep 180
+```
 
-# 5. Verify no LoadBalancers remain in your VPC
+### Step 7: Verify No LoadBalancers Remain
+
+```bash
+# Get VPC ID
 VPC_ID=$(podman_terraform output -raw vpc_id)
+
+# Verify no LoadBalancers in VPC
 aws elbv2 describe-load-balancers --region eu-central-1 \
   --query "LoadBalancers[?VpcId=='$VPC_ID']"
 
-# 6. Destroy Terraform infrastructure
-podman_terraform destroy -auto-approve
-
-# Note: If you get AWS credential errors, use -refresh=false to skip state refresh
+# Should return empty list: []
 ```
 
-### Troubleshooting: Terraform Destroy Fails
+### Step 8: Destroy Terraform Infrastructure
 
-If `terraform destroy` fails with "DependencyViolation", LoadBalancers still exist:
+```bash
+podman_terraform destroy -auto-approve
+```
+
+If destroy fails with AWS credential errors:
+```bash
+podman_terraform destroy -auto-approve -refresh=false
+```
+
+---
+
+## Troubleshooting
+
+### Terraform Destroy Fails with DependencyViolation
+
+LoadBalancers still exist in VPC. Manually delete them:
 
 ```bash
 # List remaining LoadBalancers
@@ -496,7 +635,7 @@ aws elbv2 describe-load-balancers --region eu-central-1 \
   --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
   --output text
 
-# Manually delete each LoadBalancer
+# Delete each LoadBalancer
 aws elbv2 delete-load-balancer --region eu-central-1 \
   --load-balancer-arn <ARN-from-above>
 
@@ -505,10 +644,77 @@ sleep 120
 podman_terraform destroy
 ```
 
-### AWS Cloud Provider Issues
-If LoadBalancers are not being created:
-- Verify IAM roles have correct permissions
-- Check cloud controller manager logs:
-  ```bash
-  kubectl logs -n kube-system -l k8s-app=aws-cloud-controller-manager
-  ```
+### AWS Cloud Controller LoadBalancers Not Created
+
+Check IAM permissions and controller logs:
+
+```bash
+# Verify IAM role attached to instances
+aws ec2 describe-instances --instance-ids <instance-id> \
+  --query 'Reservations[0].Instances[0].IamInstanceProfile'
+
+# Check cloud controller logs
+podman_kubectl logs -n kube-system -l k8s-app=aws-cloud-controller-manager
+```
+
+### Ingress Not Accessible
+
+```bash
+# 1. Check Ingress exists and has address
+podman_kubectl get ingress
+
+# 2. Check ingress-nginx pods running
+podman_kubectl get pods -n ingress-nginx
+
+# 3. Check NLB exists and is active
+podman_kubectl get svc ingress-nginx-controller -n ingress-nginx
+
+# 4. Check ingress controller logs
+podman_kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
+
+# 5. Test with curl
+curl -v -H "Host: yourapp.example.com" http://<NLB-HOSTNAME>
+```
+
+### Certificates Not Issued
+
+```bash
+# Check certificate status
+podman_kubectl get certificate
+podman_kubectl describe certificate <cert-name>
+
+# Check ACME challenges
+podman_kubectl get challenge
+podman_kubectl describe challenge <challenge-name>
+
+# Check cert-manager logs
+podman_kubectl logs -n cert-manager -l app=cert-manager
+
+# Common issues:
+# - ClusterIssuer not applied
+# - DNS not resolving to NLB yet
+# - Ports 80/443 blocked
+```
+
+---
+
+## Reference Links
+
+### Kubernetes
+- [Install kubeadm](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
+- [CRI-O Container Runtime](https://cri-o.io/)
+- [Create cluster with kubeadm](https://v1-32.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
+- [Kubelet customization](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/kubelet-integration/)
+
+### Calico
+- [Calico installation](https://docs.tigera.io/calico/latest/getting-started/kubernetes/k8s-single-node)
+- [Calico configuration](https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/config-options)
+
+### AWS Integration
+- [AWS Cloud Provider](https://github.com/kubernetes/cloud-provider-aws)
+- [AWS Load Balancer Controller](https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html)
+- [AWS VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s)
+
+### GitOps
+- [FluxCD](https://spacelift.io/blog/fluxcd)
+- [Flux installation](https://fluxcd.io/flux/installation/)
