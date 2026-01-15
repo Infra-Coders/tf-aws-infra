@@ -1,0 +1,64 @@
+# Example application with EDGE TLS termination
+# TLS terminates at the Ingress (cert-manager provisions certificate)
+# Traffic from Ingress to Pod is unencrypted (HTTP)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-edge-tls
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-edge-tls
+  template:
+    metadata:
+      labels:
+        app: nginx-edge-tls
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-edge-tls
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-edge-tls
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-edge-tls
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging" # Use letsencrypt-prod for production
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    external-dns.alpha.kubernetes.io/hostname: "edge.luke.infra-coders.com" # Auto-create DNS record
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - edge.luke.infra-coders.com # CHANGE THIS to your domain!
+      secretName: nginx-edge-tls-cert # cert-manager will create this secret
+  rules:
+    - host: edge.luke.infra-coders.com # CHANGE THIS to your domain!
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-edge-tls
+                port:
+                  number: 80

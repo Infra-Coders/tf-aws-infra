@@ -1,0 +1,159 @@
+# Example application with PASSTHROUGH TLS
+# TLS terminates at the Pod (application handles TLS)
+# Traffic from Ingress to Pod remains encrypted (HTTPS)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-passthrough-tls-config
+  namespace: default
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    http {
+        server {
+            listen 443 ssl;
+            server_name passthrough.example.com;
+
+            ssl_certificate /etc/nginx/ssl/tls.crt;
+            ssl_certificate_key /etc/nginx/ssl/tls.key;
+
+            location / {
+                return 200 'HTTPS is working! This is passthrough TLS.\n';
+                add_header Content-Type text/plain;
+            }
+        }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nginx-passthrough-tls-cert
+  namespace: default
+type: kubernetes.io/tls
+stringData:
+  # Self-signed certificate for passthrough.luke.infra-coders.com
+  # In production, use your own certificate or cert-manager with DNS-01 challenge
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIDCzCCAfOgAwIBAgIJALC9R5oLS4C4MA0GCSqGSIb3DQEBCwUAMCwxKjAoBgNV
+    BAMMIXBhc3N0aHJvdWdoLmx1a2UuaW5mcmEtY29kZXJzLmNvbTAeFw0yNjAxMTEy
+    MDM3NThaFw0yNzAxMTEyMDM3NThaMCwxKjAoBgNVBAMMIXBhc3N0aHJvdWdoLmx1
+    a2UuaW5mcmEtY29kZXJzLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
+    ggEBAPCKmQkmjWHW2BNxz5VW3OP5e2kkAJEQdfJ8l8k2n2PASRgUOOxku50jsjUA
+    wh4B6Ah55RR8IthplDkUJRxSYjB/FjC5N/2QpnP4gNDPQDYJ6jdHMkOOdMaj2cvy
+    GCTxlOipCERufaC7WvbwYOHibUY1EHx/R/gf13FBg9U5v6lH5JztbpkvT5Hhcgj3
+    nygX4czYdE5lQY0ZL8opA5Uuji4MT/khxINzDtQzWG3sdsOgJzylxOgboYopPfMa
+    RIkZN3oXeD1ylcY7JGW+QPKbfIN/P6WHIVQWfEFocrSFlULJ6/A8V2WDY4yOWaZf
+    vymTElAfnsAXHb/RrC/d2EDQjdsCAwEAAaMwMC4wLAYDVR0RBCUwI4IhcGFzc3Ro
+    cm91Z2gubHVrZS5pbmZyYS1jb2RlcnMuY29tMA0GCSqGSIb3DQEBCwUAA4IBAQCa
+    sDp8ooygmqn16/LnmEYsBBEk1cu1SYDFOxuo9aa0/BEFQ0HiZNyACO9u6AoJ7GYH
+    ygvJNhU5Lg8fFcJkXCZiJrYq2rogs2nzlXYOGvbUrw4IOqHg8W/5RmTpjhTNIoVY
+    z8byWt5hqCLIvQ1pKIWpHnuy5BBYUKeAY9gKD/erRhQsOpb9NN85oH5Nv/duXhdP
+    vPkCuiVZnS1KQmUy+FKoC2V+GUfnbsO1sRPX7w5ob8POSIirnlj4pHPNhbkvtTp4
+    jX4g3wJ2CT7inJM1imDlS3jdoyg1W6GhM72PnQtdeFt5Plr4R15P3teP9W4dYj/N
+    NflAkxhZRZkgSLhqOwyq
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN PRIVATE KEY-----
+    MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDwipkJJo1h1tgT
+    cc+VVtzj+XtpJACREHXyfJfJNp9jwEkYFDjsZLudI7I1AMIeAegIeeUUfCLYaZQ5
+    FCUcUmIwfxYwuTf9kKZz+IDQz0A2Ceo3RzJDjnTGo9nL8hgk8ZToqQhEbn2gu1r2
+    8GDh4m1GNRB8f0f4H9dxQYPVOb+pR+Sc7W6ZL0+R4XII958oF+HM2HROZUGNGS/K
+    KQOVLo4uDE/5IcSDcw7UM1ht7HbDoCc8pcToG6GKKT3zGkSJGTd6F3g9cpXGOyRl
+    vkDym3yDfz+lhyFUFnxBaHK0hZVCyevwPFdlg2OMjlmmX78pkxJQH57AFx2/0awv
+    3dhA0I3bAgMBAAECggEBAMoyl2X7xEkEQmpF90r/03rHkpfVLazDe4I0fZskkWNW
+    lZrqFNeR7auv//NSCdsTmyrU3F4V42yrg29fobpm/ibqDYszhv9dAq7lq9LbBIzo
+    VLvW20eyjjMUNNadUPJtKNFSlaKAhpYAJ/0AH1CB931Wyd79V1AZ5A5OFjW874Gp
+    Ti2KpLCHjjnPKQiSMkxMpObZImRnVFhxck1/l5XPBAw7zr/ehFNnTB5rsOvgCYWH
+    lHJ/6nivjzbrOE73ttlymYHZqDiFt973XcgrVaS5saQZhBa+ouPqR4SmL82Zq3ZI
+    toMGo20Xv/rwuGWHFh2GLE5Kry3vSWVTKlq/W56eJhECgYEA+a24Znn6JoZsd+4D
+    n+ONEX3EIQM7ENFszCU1sq2Heg4psKB4ZtWlM8XfKWqD/ZPCS1IhCoWYhrZPoYqd
+    vTmE+GI1e1QC34H22wYsR7WDCFcvTEK/t457sFZ7pBrJamtPYwFLQy7yJbUSwjbD
+    Hy7MBAGzbQwQqa0ZnhdxNlpJww0CgYEA9qGnufk2j2kYfVhvi8U2L/RhVoewF9ha
+    8+is60wzS8xjwaIKSnpmwsga6vTLLV6XVlDvdFpEsAK+tXHrbIxh2cAuJqZc2lVC
+    bwQFMNM5AjGh4BvwB3VpX9NUSHQgCNOJiBH7zU+2DLYH5SQXlat7FqZr+5wlpZQr
+    vM1eR+0w+ocCgYBZBK0ILFkZvzeREtVL/k9fex2gP4yhlGlb57Bbgi8ZP09x3+TN
+    lUKPUO8dzxI8KKBPRnrtS3B0JzABAnD29DkKbclvrSZRFf8zW+IRtw9+u8brQ6kj
+    ArPqzQrMGZjSTmxBekahL226L/L+N5Qd3At1Kj4UlQaj2EmX6fe9TzeZSQKBgCmp
+    r0rUVaouR8vM57MF0pyRPOxAKbgtfVfcw3FQQw4X7fYk6HYibT+UTC/KwJPeedRE
+    Ad927EmLfSnrn6iLonAFbgZrbh4X7wwP8syHsgaz2bOhJJAt/moIqiE/NLYo/f+1
+    ggLx50AIdBb6XN2UxUtTO8SaYSWyfRz82GNwJyj7AoGALDpUSZ4J3UJygd5bNhTj
+    CnFlpdkUNA2h6+E3bbqwt7Uv9XT7SZlP3y6mBhSU8JUB8FjOJangyB/Ic+feYm7q
+    r/rG4weXnJgKyScVqO4NE83ZaHRUOBaFEHybI1VG+HU95vu+0msq3Rx+Eipgd6Kk
+    qEPfsX/z82vwZPU/s4hOuhU=
+    -----END PRIVATE KEY-----
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-passthrough-tls
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-passthrough-tls
+  template:
+    metadata:
+      labels:
+        app: nginx-passthrough-tls
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 443
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tls-cert
+              mountPath: /etc/nginx/ssl
+              readOnly: true
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-passthrough-tls-config
+        - name: tls-cert
+          secret:
+            secretName: nginx-passthrough-tls-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-passthrough-tls
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-passthrough-tls
+  ports:
+    - port: 443
+      targetPort: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-passthrough-tls
+  namespace: default
+  annotations:
+    # SSL passthrough - traffic goes encrypted to the backend
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    external-dns.alpha.kubernetes.io/hostname: "passthrough.luke.infra-coders.com" # Auto-create DNS record
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: passthrough.luke.infra-coders.com # CHANGE THIS to your domain!
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-passthrough-tls
+                port:
+                  number: 443

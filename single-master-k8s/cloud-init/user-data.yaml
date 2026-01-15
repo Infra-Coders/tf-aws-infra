@@ -109,7 +109,9 @@ write_files:
 
       wait_for_kube_objects 300 calico-system "condition=Available" $calico_kobjects
 
-      echo "Restart kobjects deployment.apps/coredns"
+      echo "Patching and restarting CoreDNS..."
+      # Patch CoreDNS to use Google DNS (prevents VPC DNS caching issues)
+      kubectl patch configmap coredns -n kube-system --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health {\n       lameduck 5s\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n       pods insecure\n       fallthrough in-addr.arpa ip6.arpa\n       ttl 30\n    }\n    prometheus :9153\n    forward . 8.8.8.8 8.8.4.4 {\n       max_concurrent 1000\n    }\n    cache 30 {\n       disable success cluster.local\n       disable denial cluster.local\n    }\n    loop\n    reload\n    loadbalance\n}\n"}}'
       kubectl -n kube-system rollout restart deployment.apps/coredns
       wait_for_kube_objects 300 kube-system "condition=Available" deployment.apps/coredns
 

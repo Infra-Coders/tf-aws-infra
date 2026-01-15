@@ -23,19 +23,11 @@ helm repo update
 echo "Creating ingress-nginx namespace..."
 kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
 
-# Check if already installed
-if helm list -n ingress-nginx | grep -q ingress-nginx; then
-    echo "Ingress NGINX is already installed. Upgrading..."
-    helm upgrade ingress-nginx ingress-nginx/ingress-nginx \
-      --namespace ingress-nginx \
-      --values manifests/ingress-nginx-values.yaml
-else
-    # Install Ingress NGINX
-    echo "Installing Ingress NGINX..."
-    helm install ingress-nginx ingress-nginx/ingress-nginx \
-      --namespace ingress-nginx \
-      --values manifests/ingress-nginx-values.yaml
-fi
+# Install or upgrade Ingress NGINX
+echo "Installing/Upgrading Ingress NGINX..."
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --values manifests/ingress-nginx-values.yaml
 
 echo "Ingress NGINX deployed successfully!"
 
