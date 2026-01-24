@@ -4,10 +4,22 @@ set -e
 
 export KUBECONFIG=~/.kube/aws-k8s
 
-# Configuration - Update these values
-DOMAIN_FILTER="luke.infra-coders.com"
-HOSTED_ZONE_ID="Z02251092DC8UV3YZXE7B"
+# Configuration
+# HOSTED_ZONE_ID=$(aws route53 list-hosted-zones --query "HostedZones[?Name=='your-domain.com.'].Id" --output text | cut -d'/' -f3)
+# Example:
+# DOMAIN_FILTER="<YOUR SUBDOMAIN>.infra-coders.com"
+# HOSTED_ZONE_ID="Z0123456789ABCDEFG"
 AWS_REGION="eu-central-1"
+
+if [ -z "${DOMAIN_FILTER}" ]; then
+    echo "Error: DOMAIN_FILTER is required (e.g. foo.infra-coders.com)"
+    exit 1
+fi
+
+if [ -z "${HOSTED_ZONE_ID}" ]; then
+    echo "Error: HOSTED_ZONE_ID is required (e.g. Z0123456789ABCDEFG)"
+    exit 1
+fi
 
 echo "Deploying external-dns..."
 

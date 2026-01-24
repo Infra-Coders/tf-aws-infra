@@ -1,0 +1,24 @@
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+
+  host: edge.example.com   # <<< APP TEAM ZMIENIA
+  tls:
+    enabled: true
+    secretName: edge-tls-cert
+
+  annotations:
+    certManagerIssuer: letsencrypt-staging
+    forceSSLRedirect: "true"
+
+resources: {}

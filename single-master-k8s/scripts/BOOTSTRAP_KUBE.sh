@@ -135,6 +135,10 @@ echo "  2. Deploy AWS Cloud Controller Manager (optional, for LoadBalancer suppo
 echo "     podman_run ./scripts/deploy-aws-cloud-provider.sh"
 echo ""
 echo "  3. Deploy Ingress NGINX (optional, for HTTP/HTTPS routing):"
-echo "     podman_run ./scripts/deploy-ingress-nginx.sh"
+echo "     Variant 1 (Legacy, cloud-provider-aws NLB):"
+echo "       podman_run ./scripts/deploy-ingress-nginx-aws-cloud-provider.sh"
+echo "     Variant 2 (Recommended, AWS LB Controller + central NLB):"
+echo "       podman_run ./scripts/deploy-aws-lb-controller.sh"
+echo "       podman_run ./scripts/deploy-ingress-nginx-aws-lb-controller.sh"
 printf "%0.s*" {1..80}
 echo

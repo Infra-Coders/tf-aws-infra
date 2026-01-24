@@ -6,9 +6,10 @@ Production-ready Kubernetes cluster on AWS using kubeadm, Calico CNI with eBPF d
 - [Prerequisites](#prerequisites)
 - [1. Bootstrap Cluster](#1-bootstrap-cluster)
 - [2. AWS Cloud Controller Manager (Optional)](#2-aws-cloud-controller-manager-optional)
-- [3. Ingress NGINX](#3-ingress-nginx)
-- [4. External DNS (Optional)](#4-external-dns-optional)
-- [5. Cert-Manager (Optional)](#5-cert-manager-optional)
+- [3. AWS Load Balancer Controller (Optional)](#3-aws-load-balancer-controller-optional)
+- [4. Ingress NGINX](#4-ingress-nginx)
+- [5. External DNS (Optional)](#5-external-dns-optional)
+- [6. Cert-Manager (Optional)](#6-cert-manager-optional)
 - [Cleanup](#cleanup)
 - [Troubleshooting](#troubleshooting)
 - [Reference Links](#reference-links)
@@ -154,14 +155,91 @@ podman_kubectl delete deployment test-nginx
 
 ---
 
-## 3. Ingress NGINX
+## 3. AWS Load Balancer Controller (Optional)
 
-Deploy Ingress NGINX for cost-efficient HTTP/HTTPS routing using a single NLB for all applications.
+Deploy AWS Load Balancer Controller for managing AWS load balancers via explicit Kubernetes resources.
+
+This is required for Ingress NGINX Variant 2 (AWS Load Balancer Controller + central NLB).
+
+### When to Deploy
+
+**Deploy if you need:**
+- Ingress NGINX Variant 2 (recommended)
+- Fine-grained AWS permissions / future-proof design
+
+**Skip if:**
+- You only use Ingress NGINX Variant 1 (cloud-provider-aws creates the NLB)
+
+### Deploy
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+podman_run ./scripts/deploy-aws-cloud-provider.sh
+podman_run ./scripts/deploy-aws-lb-controller.sh
+```
+
+### Verify
+
+```bash
+podman_kubectl get pods -n kube-system -l k8s-app=aws-cloud-controller-manager
+podman_kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+```
+
+---
+
+## 4. Ingress NGINX
+
+Deploy Ingress NGINX for cost-efficient HTTP/HTTPS routing using a single, central AWS Network Load Balancer (NLB) shared by all applications.
+
+This platform supports two equivalent ingress deployment variants. Both expose the same interface to application teams (Ingress objects), but differ in how the NLB is created and managed.
 
 ### Architecture
 
 ```
 Internet → AWS NLB (TCP/443,80) → NodePort → ingress-nginx → ClusterIP Services → Pods
+```
+
+### Variant 1: AWS Cloud Provider + Central NLB (Legacy)
+
+In this variant, the NLB is created automatically from the `ingress-nginx` Service `type=LoadBalancer` (managed by `cloud-provider-aws`).
+
+**Deploy**
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# (Optional) deploy cloud-provider-aws if you need Kubernetes-managed LoadBalancers
+podman_run ./scripts/deploy-aws-cloud-provider.sh
+
+# Deploy ingress-nginx with Service type=LoadBalancer
+podman_run ./scripts/deploy-ingress-nginx-aws-cloud-provider.sh
+```
+
+**Verify**
+
+```bash
+# Get NLB hostname (wait 2-3 minutes for provisioning)
+podman_kubectl get svc ingress-nginx-controller -n ingress-nginx
+```
+
+### Variant 2: AWS Load Balancer Controller + Central NLB (Recommended)
+
+In this variant, `ingress-nginx` runs behind NodePort, and a separate Service (`ingress-nlb`) owns the NLB (managed by AWS Load Balancer Controller).
+
+**Deploy**
+
+```bash
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Deploy ingress-nginx (NodePort) + central NLB service
+podman_run ./scripts/deploy-ingress-nginx-aws-lb-controller.sh
+```
+
+**Verify**
+
+```bash
+# Get NLB hostname (wait 2-3 minutes for provisioning)
+podman_kubectl get svc ingress-nlb -n ingress-nginx
 ```
 
 ### Benefits
@@ -171,27 +249,11 @@ Internet → AWS NLB (TCP/443,80) → NodePort → ingress-nginx → ClusterIP S
 - **Routing**: Host-based and path-based routing
 - **Load balancing**: Distributes traffic across pods
 
-### Deploy
-
-```bash
-export KUBECONFIG=~/.kube/aws-k8s
-podman_run ./scripts/deploy-ingress-nginx.sh
-```
-
-### Verify
-
-```bash
-# Get NLB hostname (wait 2-3 minutes for provisioning)
-podman_kubectl get svc ingress-nginx-controller -n ingress-nginx
-
-# Expected output shows EXTERNAL-IP with AWS NLB hostname
-```
-
 ### Deploy Example Application
 
 ```bash
 # Deploy sample app with Ingress
-podman_kubectl apply -f manifests/example-app.yaml
+podman_kubectl apply -f examples/manifests/example-app.yaml
 
 # Check Ingress
 podman_kubectl get ingress
@@ -200,7 +262,19 @@ podman_kubectl get ingress
 curl -H "Host: demo.luke.infra-coders.com" http://<NLB-HOSTNAME>
 ```
 
-### Deploy Your Own Application
+### Deploy Your Own Application (Both Ingress Variants)
+
+The following application pattern works with both Variant 1 and Variant 2.
+
+**Platform contract:**
+- Application teams do not create `LoadBalancer` Services
+- Application teams do not create `NodePort` Services
+- Application teams create only:
+  - `Deployment`
+  - `Service` (`ClusterIP`)
+  - `Ingress`
+
+#### Option A: Pure Kubernetes manifests
 
 Create three resources for each application:
 
@@ -269,9 +343,29 @@ Apply:
 podman_kubectl apply -f myapp.yaml
 ```
 
+#### Option B: Helm chart examples
+
+Two example charts are provided under `examples/`.
+
+**Edge TLS (default application pattern)**
+
+```bash
+podman_helm install my-edge-app ./examples/edge-app \
+  --set ingress.host=edge.myteam.infra-coders.com
+```
+
+**TLS passthrough (advanced / opt-in)**
+
+```bash
+podman_helm install my-passthrough-app ./examples/passthrough-app \
+  --set ingress.host=secure.myteam.infra-coders.com
+```
+
+Note: TLS passthrough requires ingress-nginx started with `--enable-ssl-passthrough`.
+
 ---
 
-## 4. External DNS (Optional)
+## 5. External DNS (Optional)
 
 Automatically manage Route 53 DNS records when creating/deleting Ingress resources.
 
@@ -332,7 +426,7 @@ aws route53 list-resource-record-sets --hosted-zone-id <YOUR_ZONE_ID>
 
 ---
 
-## 5. Cert-Manager (Optional)
+## 6. Cert-Manager (Optional)
 
 Automate TLS certificate management using Let's Encrypt.
 
@@ -345,8 +439,8 @@ export KUBECONFIG=~/.kube/aws-k8s
 podman_run ./scripts/deploy-cert-manager.sh
 
 # IMPORTANT: Apply ClusterIssuer (required for certificates!)
-# Edit manifests/clusterissuer-letsencrypt.yaml and change email first
-podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
+# Edit examples/cert-manager/clusterissuer-letsencrypt.yaml and change email first
+podman_kubectl apply -f examples/cert-manager/clusterissuer-letsencrypt.yaml
 ```
 
 ### TLS Termination: Edge (Recommended)
@@ -359,10 +453,10 @@ podman_kubectl apply -f manifests/clusterissuer-letsencrypt.yaml
 
 **Deploy example:**
 ```bash
-# Edit manifests/example-app-edge-tls.yaml:
+# Edit examples/manifests/example-app-edge-tls.yaml:
 # - Change domain to your domain
 # - Change email in certificate annotation
-podman_kubectl apply -f manifests/example-app-edge-tls.yaml
+podman_kubectl apply -f examples/manifests/example-app-edge-tls.yaml
 
 # Check certificate status
 podman_kubectl get certificate
@@ -422,8 +516,8 @@ spec:
 
 **Deploy example:**
 ```bash
-# Edit manifests/example-app-passthrough-tls.yaml and change domain
-podman_kubectl apply -f manifests/example-app-passthrough-tls.yaml
+# Edit examples/manifests/example-app-passthrough-tls.yaml and change domain
+podman_kubectl apply -f examples/manifests/example-app-passthrough-tls.yaml
 ```
 
 ### Troubleshooting: DNS Not Resolving
@@ -518,11 +612,11 @@ export KUBECONFIG=~/.kube/aws-k8s
 podman_kubectl delete -f your-app.yaml
 
 # Delete TLS example applications
-podman_kubectl delete -f manifests/example-app-edge-tls.yaml
-podman_kubectl delete -f manifests/example-app-passthrough-tls.yaml
+podman_kubectl delete -f examples/manifests/example-app-edge-tls.yaml
+podman_kubectl delete -f examples/manifests/example-app-passthrough-tls.yaml
 
 # Delete ClusterIssuers
-podman_kubectl delete -f manifests/clusterissuer-letsencrypt.yaml
+podman_kubectl delete -f examples/cert-manager/clusterissuer-letsencrypt.yaml
 
 # Delete remaining certificates and secrets
 podman_kubectl delete certificate --all -n default
@@ -564,10 +658,13 @@ podman_kubectl delete namespace external-dns
 podman_kubectl delete ingress --all -n default
 
 # Delete example apps
-podman_kubectl delete -f manifests/example-app.yaml
+podman_kubectl delete -f examples/manifests/example-app.yaml
 
-# Uninstall Ingress NGINX (removes NLB)
+# Uninstall Ingress NGINX
 podman_helm uninstall ingress-nginx -n ingress-nginx
+
+# If using the AWS LB Controller + central NLB variant, also remove the central Service
+podman_kubectl delete svc ingress-nlb -n ingress-nginx
 
 # Delete namespace
 podman_kubectl delete namespace ingress-nginx

@@ -27,7 +27,7 @@ kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply 
 echo "Installing/Upgrading Ingress NGINX..."
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace ingress-nginx \
-  --values manifests/ingress-nginx-values.yaml
+  --values examples/nginx_ingress/aws_cloud_provider_NLB/ingress-nginx-values.yaml
 
 echo "Ingress NGINX deployed successfully!"
 

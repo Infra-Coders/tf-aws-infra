@@ -44,6 +44,7 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-staging" # Use letsencrypt-prod for production
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     external-dns.alpha.kubernetes.io/hostname: "edge.luke.infra-coders.com" # Auto-create DNS record
 spec:
   ingressClassName: nginx

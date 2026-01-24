@@ -94,6 +94,13 @@ resource "aws_security_group" "ic-k8slab-sg" {
   }
 
   ingress {
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     from_port   = 6443
     to_port     = 6443
     protocol    = "tcp"
@@ -113,6 +120,22 @@ resource "aws_security_group" "ic-k8slab-sg" {
     protocol    = "-1"
     cidr_blocks = [aws_subnet.ic-k8slab-1a.cidr_block]
   }
+
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [aws_subnet.ic-k8slab-1b.cidr_block]
+  }
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [aws_subnet.ic-k8slab-1c.cidr_block]
+  }
+
 
   egress {
     from_port   = 0
