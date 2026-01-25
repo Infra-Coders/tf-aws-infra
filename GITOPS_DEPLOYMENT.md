@@ -518,52 +518,33 @@ podman_kubectl get ingress
 
 ---
 
-## Phase 5: Deploy HTTPS Applications with cert-manager
+## Phase 5: Deploy HTTPS Applications with cert-manager (Optional)
 
 ### Overview
 
-The `ic-aws-stack` now includes **cert-manager** which automatically provisions and manages TLS certificates from Let's Encrypt. This enables HTTPS for your applications with automatic certificate renewal.
+**cert-manager** is an optional component deployed from a separate repository (`ic-cert-manager-stack`). This modular approach allows you to enable TLS certificate management only when needed.
 
-### Components Deployed
+cert-manager automatically provisions and manages TLS certificates from Let's Encrypt, enabling HTTPS for your applications with automatic certificate renewal.
 
-When you deployed `ic-aws-stack`, the following cert-manager components were automatically installed:
+### Architecture
 
-1. **cert-manager** - Core certificate management controller
-2. **cert-manager-webhook** - Validates certificate requests
-3. **cert-manager-cainjector** - Injects CA bundles into resources
+cert-manager is now a **separate, optional stack**:
 
-**Note:** ClusterIssuers are NOT automatically deployed and must be applied manually after cert-manager is ready.
+- **ic-aws-stack** - Core AWS infrastructure (cloud-controller, external-dns)
+- **ic-ingress-stack** - NGINX Ingress controller
+- **ic-cert-manager-stack** - cert-manager and ClusterIssuers (optional)
 
-### Step 5.1: Verify cert-manager Installation
+This separation allows you to:
+- ✅ Deploy cert-manager only when needed
+- ✅ Version cert-manager independently
+- ✅ Reuse cert-manager across different environments
+- ✅ Keep infrastructure stacks focused and modular
 
-```bash
-export KUBECONFIG=~/.kube/aws-k8s
+### Step 5.1: Deploy ic-cert-manager-stack
 
-# Check cert-manager pods (should be Running)
-podman_kubectl get pods -n cert-manager
+**1. Configure your email in the ClusterIssuer patch:**
 
-# Expected output:
-# NAME                                      READY   STATUS    RESTARTS   AGE
-# cert-manager-5f8cc8f859-xxxxx             1/1     Running   0          2m
-# cert-manager-cainjector-8fb9f5964-xxxxx   1/1     Running   0          2m
-# cert-manager-webhook-f8cdc9dd9-xxxxx      1/1     Running   0          2m
-```
-
-### Step 5.2: Configure ClusterIssuers (Automated via Flux)
-
-ClusterIssuers are automatically deployed via Flux using **health checks** to overcome CRD timing issues.
-
-**How it works:**
-1. Flux deploys cert-manager via HelmRelease (includes CRDs)
-2. Flux waits for cert-manager deployments to be healthy (health checks)
-3. Once healthy, Flux applies ClusterIssuers (CRDs are now ready)
-4. Your environment-specific email is applied via Kustomize patch
-
-**Configuration:**
-
-**1. Update your environment-specific patch file:**
-
-Edit `ic-aws-stack/clusters/dev/<your-subdomain>/clusterissuer-patch.yaml` with your email:
+Edit `ic-cert-manager-stack/clusters/dev/<your-subdomain>/clusterissuer-patch.yaml`:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -583,40 +564,47 @@ spec:
     email: your-email@example.com  # Change this
 ```
 
-**2. Ensure your kustomization includes ClusterIssuers:**
+**2. Commit and push ic-cert-manager-stack:**
 
-`ic-aws-stack/clusters/dev/<your-subdomain>/kustomization.yaml`:
-
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - ../../base
-  - ../../base/clusterissuer-letsencrypt.yaml  # ClusterIssuer base
-patches:
-  - path: external-dns-patch.yaml
-  - path: clusterissuer-patch.yaml  # Your email patch
+```bash
+cd /path/to/ic-cert-manager-stack
+git add .
+git commit -m "Initial cert-manager stack configuration"
+git push
 ```
 
-**3. Ensure health checks are configured:**
+**3. Add cert-manager to ic-gitops-central:**
 
-`ic-gitops-central/clusters/dev/<your-subdomain>/aws.yaml`:
+Create `ic-gitops-central/clusters/dev/<your-subdomain>/cert-manager.yaml`:
 
 ```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: ic-cert-manager-stack
+  namespace: flux-system
+spec:
+  url: https://github.com/Infra-Coders/ic-cert-manager-stack.git
+  ref:
+    branch: main
+  interval: 2m
+---
+# First: Deploy cert-manager HelmRelease (base components)
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: ic-aws
+  name: ic-cert-manager-base
   namespace: flux-system
 spec:
   sourceRef:
     kind: GitRepository
-    name: ic-aws-stack
-  path: ./clusters/dev/<your-subdomain>
+    name: ic-cert-manager-stack
+  path: ./clusters/base
   prune: true
   interval: 2m
-  healthChecks:  # Wait for cert-manager to be ready
+  dependsOn:
+    - name: ic-ingress
+  healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: cert-manager
@@ -629,28 +617,77 @@ spec:
       kind: Deployment
       name: cert-manager-cainjector
       namespace: cert-manager
+  patches:
+    # Exclude ClusterIssuers from base - they deploy in second stage
+    - patch: |
+        $patch: delete
+        apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: letsencrypt-staging
+      target:
+        kind: ClusterIssuer
+        name: letsencrypt-staging
+    - patch: |
+        $patch: delete
+        apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: letsencrypt-prod
+      target:
+        kind: ClusterIssuer
+        name: letsencrypt-prod
+---
+# Second: Deploy ClusterIssuers after cert-manager is ready
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ic-cert-manager-issuers
+  namespace: flux-system
+spec:
+  sourceRef:
+    kind: GitRepository
+    name: ic-cert-manager-stack
+  path: ./clusters/dev/<your-subdomain>
+  prune: true
+  interval: 2m
+  dependsOn:
+    - name: ic-cert-manager-base
 ```
 
-**4. Commit and push changes:**
+**4. Commit and push ic-gitops-central:**
 
 ```bash
-# Update both repositories
-cd /path/to/ic-aws-stack
-git add clusters/dev/<your-subdomain>/
-git commit -m "Configure ClusterIssuer with email"
-git push
-
 cd /path/to/ic-gitops-central
-git add clusters/dev/<your-subdomain>/aws.yaml
-git commit -m "Add health checks for cert-manager"
+git add clusters/dev/<your-subdomain>/cert-manager.yaml
+git commit -m "Add cert-manager stack"
 git push
 ```
 
-**5. Verify ClusterIssuers are deployed:**
+**5. Verify deployment:**
 
 ```bash
-# Wait for Flux to reconcile (or force it)
-podman_flux reconcile kustomization ic-aws
+export KUBECONFIG=~/.kube/aws-k8s
+
+# Check all Flux Kustomizations
+podman_flux get kustomizations
+
+# Expected output:
+# NAME                         READY   MESSAGE
+# flux-system                  True    Applied revision: ...
+# ic-aws                       True    Applied revision: ...
+# ic-ingress                   True    Applied revision: ...
+# ic-cert-manager-base         True    Applied revision: ...
+# ic-cert-manager-issuers      True    Applied revision: ...
+
+# Check cert-manager pods
+podman_kubectl get pods -n cert-manager
+
+# Expected output:
+# NAME                                      READY   STATUS    RESTARTS   AGE
+# cert-manager-5f8cc8f859-xxxxx             1/1     Running   0          2m
+# cert-manager-cainjector-8fb9f5964-xxxxx   1/1     Running   0          2m
+# cert-manager-webhook-f8cdc9dd9-xxxxx      1/1     Running   0          2m
 
 # Verify ClusterIssuers are ready
 podman_kubectl get clusterissuer
@@ -661,7 +698,33 @@ podman_kubectl get clusterissuer
 # letsencrypt-prod       True    2m
 ```
 
-**Why this works:** Flux health checks ensure cert-manager deployments are running and healthy before applying ClusterIssuers. This guarantees CRDs are registered and ready, eliminating the timing issue.
+### Step 5.2: Understanding the Two-Stage Deployment
+
+**Why split into two Kustomizations?**
+
+The split approach solves the **CRD timing issue** where ClusterIssuers were being applied before cert-manager CRDs were registered.
+
+**Deployment Flow:**
+
+**Stage 1: ic-cert-manager-base**
+1. Flux creates the `ic-cert-manager-stack` GitRepository
+2. Flux creates `ic-cert-manager-base` Kustomization (depends on `ic-ingress`)
+3. Flux deploys HelmRepository and cert-manager HelmRelease
+4. Flux uses patches to **exclude** ClusterIssuers from this stage
+5. Flux waits for cert-manager Deployments to be healthy (health checks)
+6. CRDs are now registered and ready
+
+**Stage 2: ic-cert-manager-issuers**
+7. Flux creates `ic-cert-manager-issuers` Kustomization (depends on `ic-cert-manager-base`)
+8. Flux waits for `ic-cert-manager-base` to be Ready
+9. Flux deploys ClusterIssuers (CRDs are guaranteed to exist)
+10. Your environment-specific email is applied via Kustomize patch
+
+**Key Benefits:**
+- ✅ Eliminates "no matches for kind ClusterIssuer" errors
+- ✅ Ensures proper dependency order
+- ✅ Fully automated - no manual intervention needed
+- ✅ GitOps compliant - all configuration in Git
 
 ### Step 5.3: Understanding ClusterIssuers
 
