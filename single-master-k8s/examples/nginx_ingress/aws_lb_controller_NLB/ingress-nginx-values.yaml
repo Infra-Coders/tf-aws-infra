@@ -1,0 +1,40 @@
+# Ingress NGINX Helm values for AWS with LB Controller + NLB
+controller:
+  publishService:
+    enabled: true
+    pathOverride: ingress-nginx/ingress-nlb
+  service:
+    type: ClusterIP
+
+    ports:
+      http: 80
+      https: 443
+
+    # Use Cluster mode to register all nodes as targets
+    externalTrafficPolicy: Cluster
+
+  # Enable real IP forwarding
+  config:
+    use-forwarded-headers: "true"
+    compute-full-forwarded-for: "true"
+
+  # Enable SSL passthrough for apps that handle TLS themselves
+  extraArgs:
+    enable-ssl-passthrough: true
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Metrics for monitoring
+  metrics:
+    enabled: true
+
+  # Run on worker nodes only
+  nodeSelector:
+    kubernetes.io/role: worker

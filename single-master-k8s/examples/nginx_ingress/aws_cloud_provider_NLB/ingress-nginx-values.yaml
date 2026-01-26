@@ -1,4 +1,4 @@
-# Ingress NGINX Helm values for AWS with NLB
+# Ingress NGINX Helm values for AWS with AWS Cloud Provider + NLB
 controller:
   service:
     type: LoadBalancer
@@ -7,6 +7,7 @@ controller:
       service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
       # Enable cross-zone load balancing
       service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
 
     # Use Cluster mode to register all nodes as targets
     externalTrafficPolicy: Cluster

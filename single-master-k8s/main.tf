@@ -61,7 +61,7 @@ resource "aws_instance" "k8s-worker" {
 
   for_each = toset(local.workers[var.workers_kind])
   # bind role
-  iam_instance_profile = aws_iam_instance_profile.k8s_worker_profile.name
+  iam_instance_profile = aws_iam_instance_profile.k8s_data_plane_profile.name
 
   subnet_id                   = aws_subnet.ic-k8slab-1a.id
   vpc_security_group_ids      = [aws_security_group.ic-k8slab-sg.id]

@@ -1,0 +1,18 @@
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 443
+
+ingress:
+  className: nginx
+  host: passthrough.example.com
+
+tls:
+  secretName: app-tls-cert
+
+resources: {}
