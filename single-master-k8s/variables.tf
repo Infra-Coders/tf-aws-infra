@@ -1,3 +1,12 @@
+variable "region" {
+  default = "us-east-1"
+  type    = string
+}
+
+variable "aws_profile" {
+  type    = string
+}
+
 variable "workers_kind" {
   default = "workers3"
 }
@@ -17,7 +26,7 @@ variable "masters_spot_enabled" {
 }
 
 variable "instance_type" {
-  type = string
+  type    = string
   default = "free"
 }
 

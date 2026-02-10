@@ -2,9 +2,10 @@
 
 podman run --rm -v ~/bin:/home/${USER}/bin \
   --user=$(id -u):$(id -g) --userns=keep-id \
-  -e "XDG_CONFIG_HOME=/home/${USER}/.config" \
+  -e "AWS_PROFILE=${AWS_PROFILE}" \
+  -e "KUBECONFIG=${KUBECONFIG}" \
   -v "$HOME/.ssh:/home/${USER}/.ssh:U" \
   -v "$HOME/.kube:/home/${USER}/.kube:U" \
-  -v "$HOME/.config/gh:/home/${USER}/.config/gh:U" \
-  -v ${PWD}:/podman \
+  -v "$HOME/.aws:/home/${USER}/.aws:U" \
+  -v "${PWD}:/podman" \
   -w /podman ic-podman-runtime:latest "$@"

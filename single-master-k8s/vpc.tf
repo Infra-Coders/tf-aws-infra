@@ -1,42 +1,42 @@
 resource "aws_vpc" "ic-k8slab" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   tags = {
-    Name                                      = "ic-k8slab"
-    "kubernetes.io/cluster/ic-k8slab"         = "owned"
+    Name                              = "ic-k8slab"
+    "kubernetes.io/cluster/ic-k8slab" = "owned"
   }
 }
 
 resource "aws_subnet" "ic-k8slab-1a" {
   vpc_id            = aws_vpc.ic-k8slab.id
   cidr_block        = "10.0.0.0/20"
-  availability_zone = "eu-central-1a"
+  availability_zone = "${var.region}a"
   tags = {
-    Name                                      = "ic-k8slab-1a"
-    "kubernetes.io/cluster/ic-k8slab"         = "owned"
-    "kubernetes.io/role/elb"                  = "1"
+    Name                              = "ic-k8slab-1a"
+    "kubernetes.io/cluster/ic-k8slab" = "owned"
+    "kubernetes.io/role/elb"          = "1"
   }
 }
 
 resource "aws_subnet" "ic-k8slab-1b" {
   vpc_id            = aws_vpc.ic-k8slab.id
   cidr_block        = "10.0.16.0/20"
-  availability_zone = "eu-central-1b"
+  availability_zone = "${var.region}b"
   tags = {
-    Name                                      = "ic-k8slab-1b"
-    "kubernetes.io/cluster/ic-k8slab"         = "owned"
-    "kubernetes.io/role/elb"                  = "1"
+    Name                              = "ic-k8slab-1b"
+    "kubernetes.io/cluster/ic-k8slab" = "owned"
+    "kubernetes.io/role/elb"          = "1"
   }
 }
 
 resource "aws_subnet" "ic-k8slab-1c" {
   vpc_id            = aws_vpc.ic-k8slab.id
   cidr_block        = "10.0.32.0/20"
-  availability_zone = "eu-central-1c"
+  availability_zone = "${var.region}c"
   tags = {
-    Name                                      = "ic-k8slab-1c"
-    "kubernetes.io/cluster/ic-k8slab"         = "owned"
-    "kubernetes.io/role/elb"                  = "1"
+    Name                              = "ic-k8slab-1c"
+    "kubernetes.io/cluster/ic-k8slab" = "owned"
+    "kubernetes.io/role/elb"          = "1"
   }
 }
 
