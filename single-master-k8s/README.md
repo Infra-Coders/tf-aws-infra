@@ -31,7 +31,7 @@ aws configure --profile <your_profile>
 
 Verify connection:
 ```bash
-aws ec2 describe-images --filters Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-* --query 'Images[*].[ImageId,CreationDate]' --output text
+aws ec2 describe-images --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' --query 'Images[*].[CreationDate,ImageId]' --output text | sort -r
 ```
 
 ### Setup Workdir
