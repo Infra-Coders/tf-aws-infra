@@ -2,7 +2,10 @@
 
 podman run --rm -v ~/bin:/home/${USER}/bin \
   --user=$(id -u):$(id -g) --userns=keep-id \
-  -v ~/.ssh:/home/${USER}/.ssh:U \
-  -v ~/.kube:/home/${USER}/.kube:U \
-  -v ${PWD}:/podman \
+  -e "AWS_PROFILE=${AWS_PROFILE}" \
+  -e "KUBECONFIG=${KUBECONFIG}" \
+  -v "$HOME/.ssh:/home/${USER}/.ssh:U" \
+  -v "$HOME/.kube:/home/${USER}/.kube:U" \
+  -v "$HOME/.aws:/home/${USER}/.aws:U" \
+  -v "${PWD}:/podman" \
   -w /podman ic-podman-runtime:latest "$@"

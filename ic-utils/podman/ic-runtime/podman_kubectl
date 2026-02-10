@@ -2,7 +2,8 @@
 
 podman run --rm -it -v ${PWD}:/podman \
  --user=$(id -u):$(id -g) --userns=keep-id \
+ -e "AWS_PROFILE=${AWS_PROFILE}" \
  -e "KUBECONFIG=${KUBECONFIG}" \
- -v ~/.aws:/home/${USER}/.aws:U \
- -v ~/.kube:/home/${USER}/.kube:U \
+ -v "$HOME/.aws:/home/${USER}/.aws:U" \
+ -v "$HOME/.kube:/home/${USER}/.kube:U" \
  ic-podman-runtime:latest kubectl "$@"

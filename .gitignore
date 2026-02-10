@@ -7,3 +7,7 @@
 */ssh/*.pem
 */ssh/*.pub
 */_*
+.vscode
+*/.vscode
+*/terraform.tfvars
+terraform.tfvars
