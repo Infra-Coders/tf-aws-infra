@@ -1,10 +1,13 @@
 #!/bin/bash
 
-podman run --rm -v ~/bin:/home/${USER}/bin \
+mkdir -p ${HOME}/.config/gh
+
+podman run --rm -it \
   --user=$(id -u):$(id -g) --userns=keep-id \
+  -v "${PWD}:/podman" \
+  -e "KUBECONFIG=${KUBECONFIG}" \
   -e "XDG_CONFIG_HOME=/home/${USER}/.config" \
-  -v "$HOME/.ssh:/home/${USER}/.ssh:U" \
   -v "$HOME/.kube:/home/${USER}/.kube:U" \
   -v "$HOME/.config/gh:/home/${USER}/.config/gh:U" \
-  -v ${PWD}:/podman \
-  -w /podman ic-podman-runtime:latest "$@"
+  -v "$HOME/.ssh:/home/${USER}/.ssh:U" \
+  ic-podman-runtime:latest gh "$@"
