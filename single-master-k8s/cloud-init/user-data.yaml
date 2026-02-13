@@ -26,13 +26,14 @@ write_files:
       sudo apt-get update
       sudo apt-get upgrade -y
       sudo apt-get install -y apt-transport-https ca-certificates curl gpg
-      export KUBERNETES_VERSION=v1.32
-      export CRIO_VERSION=v1.32
+      export KUBERNETES_VERSION=v1.35
+      export CRIO_VERSION=v1.35
       curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
       sudo apt-get install -y software-properties-common curl
-      curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/$CRIO_VERSION/deb/Release.key  | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
-      echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/$CRIO_VERSION/deb/ /" | sudo tee /etc/apt/sources.list.d/cri-o.list
+      # MK - REPO MOVED: https://github.com/cri-o/packaging#project-layout
+      curl -fsSL https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/deb/Release.key  | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/deb/ /" | sudo tee /etc/apt/sources.list.d/cri-o.list
       sudo apt-get update
       sudo apt-get install -y kubelet kubeadm kubectl conntrack
       sudo apt-mark hold kubelet kubeadm kubectl
@@ -168,7 +169,8 @@ write_files:
           dataDir: /var/lib/etcd
       imageRepository: registry.k8s.io
       kind: ClusterConfiguration
-      kubernetesVersion: v1.32.10
+      # MK - manual version set
+      kubernetesVersion: v1.35.1
       networking:
         dnsDomain: cluster.local
         podSubnet: 10.244.0.0/16
