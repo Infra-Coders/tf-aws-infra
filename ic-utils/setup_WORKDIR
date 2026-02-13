@@ -17,7 +17,7 @@ export GROUP_NAME=$(id -g -n)
 
 # IC Tools
 export ARCH=${arch}
-export KUBERNETES_VERSION=v1.32
+export KUBERNETES_VERSION=v1.35
 export TFVERSION=1.13.5
 
 pushd $(pwd)

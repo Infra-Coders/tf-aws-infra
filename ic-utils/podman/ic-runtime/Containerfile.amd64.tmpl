@@ -2,7 +2,7 @@ FROM docker.io/amd64/ubuntu:devel
 
 ARG ARCH=amd64
 
-ENV KUBERNETES_VERSION=v1.32
+ENV KUBERNETES_VERSION=v1.35
 ENV TFVERSION=1.13.5
 
 RUN id -u ${USER_ID} 2>/dev/null && userdel -f $(id -u ${USER_ID} -n) || echo "NO USER=${USER_ID}"
