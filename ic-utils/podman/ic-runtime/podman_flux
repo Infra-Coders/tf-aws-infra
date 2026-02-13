@@ -2,8 +2,9 @@
 
 podman run --rm -it \
   --user=$(id -u):$(id -g) --userns=keep-id \
-  -v "${PWD}:/podman" \
+  -e "AWS_PROFILE=${AWS_PROFILE}" \
   -e "KUBECONFIG=${KUBECONFIG}" \
+  -v "${PWD}:/podman" \
   -v "$HOME/.aws:/home/${USER}/.aws:U" \
   -v "$HOME/.kube:/home/${USER}/.kube:U" \
   ic-podman-runtime:latest flux "$@"
